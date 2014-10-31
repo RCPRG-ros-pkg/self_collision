@@ -103,7 +103,8 @@ int publishCapsule(ros::Publisher &pub, int m_id, KDL::Frame fr, double length, 
 	marker2.pose.position.x = fr.p.x() + v2.x()/2.0;
 	marker2.pose.position.y = fr.p.y() + v2.y()/2.0;
 	marker2.pose.position.z = fr.p.z() + v2.z()/2.0;
-	marker_array.markers.push_back(marker2);
+	if (length > 0.0001)
+		marker_array.markers.push_back(marker2);
 
 	visualization_msgs::Marker marker3(marker);
 	marker3.id = m_id+2;
@@ -112,7 +113,8 @@ int publishCapsule(ros::Publisher &pub, int m_id, KDL::Frame fr, double length, 
 	marker3.pose.position.y = fr.p.y();
 	marker3.pose.position.z = fr.p.z();
 	marker3.scale.z = length;
-	marker_array.markers.push_back(marker3);
+	if (length > 0.0001)
+		marker_array.markers.push_back(marker3);
 
 	visualization_msgs::Marker marker4(marker);
 	marker4.id = m_id+3;
@@ -131,6 +133,43 @@ int publishCapsule(ros::Publisher &pub, int m_id, KDL::Frame fr, double length, 
 
 	pub.publish( marker_array );
 	return m_id + 4;
+}
+
+int publishCylinder(ros::Publisher &pub, int m_id, KDL::Frame fr, double length, double radius)
+{
+	visualization_msgs::MarkerArray marker_array;
+
+	KDL::Vector zero;
+	KDL::Vector v(0,0,length);
+	KDL::Vector v2 = (fr * v) - (fr * zero);
+
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = "world";//"torso_base";
+	marker.header.stamp = ros::Time();
+	marker.ns = "default";
+	marker.id = m_id;
+	marker.type = visualization_msgs::Marker::CYLINDER;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.pose.position.x = fr.p.x() - v2.x()/2.0;
+	marker.pose.position.y = fr.p.y() - v2.y()/2.0;
+	marker.pose.position.z = fr.p.z() - v2.z()/2.0;
+	double qx, qy, qz, qw;
+	fr.M.GetQuaternion(qx, qy, qz, qw);
+	marker.pose.orientation.x = qx;
+	marker.pose.orientation.y = qy;
+	marker.pose.orientation.z = qz;
+	marker.pose.orientation.w = qw;
+	marker.scale.x = radius * 2.0;
+	marker.scale.y = radius * 2.0;
+	marker.scale.z = length;
+	marker.color.a = 0.5;
+	marker.color.r = 0.0;
+	marker.color.g = 1.0;
+	marker.color.b = 0.0;
+	marker_array.markers.push_back(marker);
+
+	pub.publish( marker_array );
+	return m_id + 1;
 }
 
 int publishMeshMarker(ros::Publisher &pub, int m_id, const KDL::Frame &tf, const fcl_2::Vec3f *points, int num_planes, const int *polygons, double r, double g, double b)

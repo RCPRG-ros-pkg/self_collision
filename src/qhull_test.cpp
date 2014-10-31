@@ -118,11 +118,8 @@ void DistanceMeasure::updateConvex(std::string name, const std::vector<KDL::Vect
 
 		ob->num_points = v.size();
 
-		ROS_INFO("DistanceMeasure::updateConvex: %d  %d", ob->num_planes, ob->num_points);
+//		ROS_INFO("DistanceMeasure::updateConvex: %d  %d", ob->num_planes, ob->num_points);
 		ob->fillEdges();
-//  int num_edges;
-//  int num_planes;
-
 	}
 	else
 	{
@@ -334,7 +331,7 @@ int main(int argc, char **argv)
 
 	// topic name, queue size
 	ros::Publisher vis_pub = n.advertise<visualization_msgs::MarkerArray>( "velma_markers", 1000 );
-	ros::Duration(0.5).sleep();
+
 
 	int joints = 0;
 	for (KDL::SegmentMap::const_iterator seg_it = robot_tree.getSegments().begin(); seg_it != robot_tree.getSegments().end(); seg_it++)
@@ -351,10 +348,18 @@ int main(int argc, char **argv)
 		}		
 	}
 
+	KDL::TreeFkSolverPos_recursive fk_solver(robot_tree);
+
+	KDL::JntArray q(joints);
+
+	// rewrite joint positions from joint_states_map to q
+	for (JointStatesMap::iterator js_it = joint_states_map.begin(); js_it != joint_states_map.end(); js_it++)
+	{
+		q(js_it->second.first) = js_it->second.second;
+	}
+
 	std::cout << "joints count: " << joints << std::endl;
 
-	KDL::TreeFkSolverPos_recursive fk_solver(robot_tree);
-	KDL::JntArray q(joints);
 
 	double angle = 0.0;
 	while (ros::ok())
@@ -382,6 +387,21 @@ int main(int argc, char **argv)
 */		//
 
 
+/*	KDL::Frame T_B_E;
+	int result = fk_solver.JntToCart(q, T_B_E, "right_HandPalmLink");
+	if (result != 0)
+		ROS_ERROR("fk_solver failed");
+	KDL::Frame fr2(KDL::Rotation::RotY(90.0/180.0*3.1415), KDL::Vector(0.075,0,0.2));
+	KDL::Frame fr = T_B_E * fr2;
+
+//	m_id = publishCapsule(vis_pub, m_id, fr, 0.25, 0.04);
+	m_id = publishCylinder(vis_pub, m_id, fr, 0.15, 0.04);
+
+		ros::spinOnce();
+
+		ros::Duration(0.05).sleep();
+		continue;
+*/
 		// iterate through all links
 		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
 		{
