@@ -267,6 +267,27 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+	// read robot semantic description
+	std::string robot_semantic_description_;
+	node.param("robot_semantic_description", robot_semantic_description_, std::string());
+
+	// TODO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	// read the robot model from the robot_description
 	ROS_INFO("parsing robot_description robot kinematic model data");
 	urdf::Model robot_model_;
