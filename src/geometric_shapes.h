@@ -265,6 +265,8 @@ public:
 /// @brief Convex polytope 
 class Convex : public ShapeBase
 {
+protected:
+  enum {MAX_EDGE_COUNT=1000};
 public:
   /// @brief Constructing a convex, providing normal and offset of each polytype surface, and the points and shape topology information 
   Convex(Vec3f* plane_normals_,
@@ -282,7 +284,6 @@ public:
 // end
     points = points_;
     polygons = polygons_;
-    edges = NULL;
 
     Vec3f sum;
     for(int i = 0; i < num_points; ++i)
@@ -303,13 +304,11 @@ public:
     num_planes = other.num_planes;
     points = other.points;
     polygons = other.polygons;
-    edges = new Edge[other.num_edges];
     memcpy(edges, other.edges, sizeof(Edge) * num_edges);
   }
 
   ~Convex()
   {
-    delete [] edges;
   }
 
   /// @brief Compute AABB 
@@ -336,7 +335,7 @@ public:
     int first, second;
   };
 
-  Edge* edges;
+  Edge edges[MAX_EDGE_COUNT];
 
   /// @brief center of the convex polytope, this is used for collision: center is guaranteed in the internal of the polytope (as it is convex) 
   Vec3f center;

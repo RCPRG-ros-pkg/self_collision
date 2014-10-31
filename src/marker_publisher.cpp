@@ -1,7 +1,8 @@
 #include "marker_publisher.h"
 #include <iostream>
+#include "geometry_msgs/Point.h"
 
-int publishSinglePointMarker(ros::Publisher &pub, int m_id, const KDL::Vector &pos, double r, double g, double b)
+int publishSinglePointMarker(ros::Publisher &pub, int m_id, const KDL::Vector &pos, double r, double g, double b, double size)
 {
 	visualization_msgs::MarkerArray marker_array;
 	visualization_msgs::Marker marker;
@@ -18,9 +19,9 @@ int publishSinglePointMarker(ros::Publisher &pub, int m_id, const KDL::Vector &p
 	marker.pose.orientation.y = 0.0;
 	marker.pose.orientation.z = 0.0;
 	marker.pose.orientation.w = 1.0;
-	marker.scale.x = 0.05;
-	marker.scale.y = 0.05;
-	marker.scale.z = 0.05;
+	marker.scale.x = size;
+	marker.scale.y = size;
+	marker.scale.z = size;
 	marker.color.a = 1.0;
 	marker.color.r = r;
 	marker.color.g = g;
@@ -135,8 +136,11 @@ int publishCapsule(ros::Publisher &pub, int m_id, KDL::Frame fr, double length, 
 int publishMeshMarker(ros::Publisher &pub, int m_id, const KDL::Frame &tf, const fcl_2::Vec3f *points, int num_planes, const int *polygons, double r, double g, double b)
 {
 	visualization_msgs::MarkerArray marker_array;
-	// triangles
+
 	visualization_msgs::Marker marker;
+	visualization_msgs::Marker marker2;
+
+	// triangles
 	marker.header.frame_id = "world";
 	marker.header.stamp = ros::Time();
 	marker.ns = "default";
@@ -152,16 +156,19 @@ int publishMeshMarker(ros::Publisher &pub, int m_id, const KDL::Frame &tf, const
 	marker.pose.orientation.y = qy;
 	marker.pose.orientation.z = qz;
 	marker.pose.orientation.w = qw;
-	marker.points.resize(num_planes*3);
+	int poly_idx = 0;
 	for (int i=0; i<num_planes; i++)
 	{
 		for (int j=0; j<3; j++)
 		{
-//			ROS_INFO("num_planes: %d   i: %d   j: %d   polygons[i*4 + 1 + j]: %d", num_planes, i, j, polygons[i*4 + 1 + j]);
-			marker.points[i*3+j].x = points[polygons[i*4 + 1 + j]][0];
-			marker.points[i*3+j].y = points[polygons[i*4 + 1 + j]][1];
-			marker.points[i*3+j].z = points[polygons[i*4 + 1 + j]][2];
+			geometry_msgs::Point pt;
+			pt.x = points[polygons[poly_idx + 1 + j]][0];
+			pt.y = points[polygons[poly_idx + 1 + j]][1];
+			pt.z = points[polygons[poly_idx + 1 + j]][2];
+			marker.points.push_back(pt);
+//			ROS_INFO("num_planes: %d  poly_idx: %d   i: %d   j: %d   polygons[i*4 + 1 + j]: %d", num_planes, poly_idx, i, j, polygons[poly_idx + 1 + j]);
 		}
+		poly_idx += polygons[poly_idx]+1;
 	}
 	marker.scale.x = 1.0;
 	marker.scale.y = 1.0;
@@ -173,7 +180,6 @@ int publishMeshMarker(ros::Publisher &pub, int m_id, const KDL::Frame &tf, const
 	marker_array.markers.push_back(marker);
 
 	// edges
-	visualization_msgs::Marker marker2;
 	marker2.header.frame_id = "world";
 	marker2.header.stamp = ros::Time();
 	marker2.ns = "default";
@@ -188,19 +194,25 @@ int publishMeshMarker(ros::Publisher &pub, int m_id, const KDL::Frame &tf, const
 	marker2.pose.orientation.y = qy;
 	marker2.pose.orientation.z = qz;
 	marker2.pose.orientation.w = qw;
-	marker2.points.resize(num_planes*3*2);
+	poly_idx = 0;
 	for (int i=0; i<num_planes; i++)
 	{
-		for (int j=0; j<3; j++)
+		int points_in_poly = polygons[poly_idx];
+		for (int j=0; j<points_in_poly; j++)
 		{
-			marker2.points[i*6+j*2].x = points[polygons[i*4 + 1 + j]][0];
-			marker2.points[i*6+j*2].y = points[polygons[i*4 + 1 + j]][1];
-			marker2.points[i*6+j*2].z = points[polygons[i*4 + 1 + j]][2];
+			geometry_msgs::Point pt1;
+			pt1.x = points[polygons[poly_idx + 1 + j]][0];
+			pt1.y = points[polygons[poly_idx + 1 + j]][1];
+			pt1.z = points[polygons[poly_idx + 1 + j]][2];
+			marker2.points.push_back(pt1);
 
-			marker2.points[i*6+j*2+1].x = points[polygons[i*4 + 1 + (j+1)%3]][0];
-			marker2.points[i*6+j*2+1].y = points[polygons[i*4 + 1 + (j+1)%3]][1];
-			marker2.points[i*6+j*2+1].z = points[polygons[i*4 + 1 + (j+1)%3]][2];
+			geometry_msgs::Point pt2;
+			pt2.x = points[polygons[poly_idx + 1 + (j+1)%points_in_poly]][0];
+			pt2.y = points[polygons[poly_idx + 1 + (j+1)%points_in_poly]][1];
+			pt2.z = points[polygons[poly_idx + 1 + (j+1)%points_in_poly]][2];
+			marker2.points.push_back(pt2);
 		}
+		poly_idx += points_in_poly+1;
 	}
 	marker2.scale.x = 0.005;
 	marker2.color.a = 1;

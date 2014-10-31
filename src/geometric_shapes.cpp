@@ -44,6 +44,69 @@ namespace fcl_2
 void Convex::fillEdges()
 {
   int* points_in_poly = polygons;
+//  if(edges) delete [] edges;
+
+//  int num_edges_alloc = 0;
+  for(int i = 0; i < num_planes; ++i)
+  {
+//    num_edges_alloc += *points_in_poly;
+    points_in_poly += (*points_in_poly + 1);
+  }
+
+//  edges = new Edge[num_edges_alloc];
+
+  points_in_poly = polygons;
+  int* index = polygons + 1;
+  num_edges = 0;
+  Edge e;
+  bool isinset;
+  for(int i = 0; i < num_planes; ++i)
+  {
+    for(int j = 0; j < *points_in_poly; ++j)
+    {
+      e.first = std::min(index[j], index[(j+1)%*points_in_poly]);
+      e.second = std::max(index[j], index[(j+1)%*points_in_poly]);
+      isinset = false;
+      for(int k = 0; k < num_edges; ++k)
+      {
+        if((edges[k].first == e.first) && (edges[k].second == e.second))
+        {
+          isinset = true;
+          break;
+        }
+      }
+
+      if(!isinset)
+      {
+        edges[num_edges].first = e.first;
+        edges[num_edges].second = e.second;
+        ++num_edges;
+        if (num_edges >= MAX_EDGE_COUNT)
+        {
+          // TODO: report error
+          return;
+        }
+      }
+    }
+
+    points_in_poly += (*points_in_poly + 1);
+    index = points_in_poly + 1;
+  }
+/*
+  if(num_edges < num_edges_alloc)
+  {
+    Edge* tmp = new Edge[num_edges];
+    memcpy(tmp, edges, num_edges * sizeof(Edge));
+    delete [] edges;
+    edges = tmp;
+  }
+*/
+}
+
+/*
+void Convex::fillEdges()
+{
+  int* points_in_poly = polygons;
   if(edges) delete [] edges;
 
   int num_edges_alloc = 0;
@@ -96,7 +159,7 @@ void Convex::fillEdges()
     edges = tmp;
   }
 }
-
+*/
 void Halfspace::unitNormalTest()
 {
   FCL_REAL l = n.length();

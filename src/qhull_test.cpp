@@ -6,19 +6,6 @@
 
 #include <iostream>
 
-#ifdef __cplusplus
-extern "C" {
-#include <libqhull/qset.h>
-#include <libqhull/libqhull.h>
-}
-#else
-#include <libqhull/qset.h>
-#include <libqhull/libqhull.h>
-#endif
-
-
-//#include <qhull/Qhull.h>
-//#include <qhull/QhullFacetList.h>
 #include <kdl_parser/kdl_parser.hpp>
 #include "self_collision_test/urdf_collision_parser.h"
 #include <kdl/chainfksolverpos_recursive.hpp>
@@ -27,15 +14,10 @@ extern "C" {
 #include "narrowphase.h"
 
 #include "marker_publisher.h"
+#include "qhull_interface.h"
 
 typedef std::map<std::string, std::pair<int,double> > JointStatesMap;
 JointStatesMap joint_states_map;
-
-typedef struct
-{
-	int i[10];
-	int count;
-} Face;
 
 void joint_statesCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
@@ -133,7 +115,7 @@ void DistanceMeasure::updateConvex(std::string name, const std::vector<KDL::Vect
 		{
 			ob->points[points_counter++] = fcl_2::Vec3f(it->x(), it->y(), it->z());
 		}
-//  Vec3f* points;
+
 		ob->num_points = v.size();
 
 		ROS_INFO("DistanceMeasure::updateConvex: %d  %d", ob->num_planes, ob->num_points);
@@ -261,93 +243,10 @@ int DistanceMeasure::publishMarker(ros::Publisher &pub, int m_id, const std::str
 		}
 		else
 		{
-			m_id = publishSinglePointMarker(pub, m_id, tf * KDL::Vector(), 1, 0, 0);
+			m_id = publishSinglePointMarker(pub, m_id, tf * KDL::Vector(), 1, 0, 0, 0.02);
 		}
 	}
 	return m_id;
-}
-
-void initQhull()
-{
-	static bool initialized = false;
-
-	if (initialized)
-	{
-//		ROS_ERROR("initQhull: already initialized");
-//		return;
-	}
-
-	initialized = true;
-
-	static FILE *null_sink = fopen("/dev/null", "w");
-
-	static char qhull_command_const[] = "Qt i";
-	static char qhull_command[256];
-	memcpy(qhull_command, qhull_command_const, strlen(qhull_command_const) + 1);
-
-	qh_init_A(NULL, null_sink, null_sink, 0, NULL);
-	qh_initflags( qhull_command );
-}
-
-void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> &v_out, std::vector<Face> &f_out)
-{
-	ROS_INFO("calculateQhull 1: size: %ld", v.size());
-	// initialize points
-	static coordT points[100 * 3];
-	int counter = 0;
-	for (std::vector<KDL::Vector>::const_iterator it = v.begin(); it != v.end(); it++)
-	{
-		points[counter++] = it->x();
-		points[counter++] = it->y();
-		points[counter++] = it->z();
-	}
-	ROS_INFO("calculateQhull 2");
-
-	qh_init_B(points, v.size(), 3, false);
-
-	ROS_INFO("calculateQhull 3");
-
-	qh_qhull();
-
-	ROS_INFO("calculateQhull 4");
-
-	int faces_count = qh num_facets;
-	int vertices_count = qh num_vertices;
-	ROS_INFO("qhull test: vertices: %d  faces: %d", vertices_count, faces_count);
-
-	v_out.clear();
-	v_out.resize(vertices_count);
-	for (vertexT *v = qh vertex_list; v != qh vertex_tail; v = v->next)
-	{
-		ROS_INFO("%d", v->id);
-		v_out[v->id] = KDL::Vector(v->point[0], v->point[1], v->point[2]);
-//		v_out.push_back(KDL::Vector(v->point[0], v->point[1], v->point[2]));
-	}
-
-	f_out.clear();
-	for (facetT *f = qh facet_list; f != qh facet_tail; f = f->next)
-	{
-		Face face;
-		for (int v_idx=0; v_idx < f->vertices->maxsize; v_idx++)
-		{
-			if (f->vertices->e[v_idx].p == NULL)
-				break;
-			vertexT *v = static_cast<vertexT *>(f->vertices->e[v_idx].p);
-			if (v_idx >= 10)
-			{
-				ROS_ERROR("v_idx >= 10");
-				break;
-			}
-			face.i[v_idx] = v->id;
-			face.count = v_idx+1;
-//			std::cout << v->id << " ";
-		}
-		f_out.push_back(face);
-	}
-	ROS_INFO("f_out: %ld", f_out.size());
-	ROS_INFO("v_out: %ld", v_out.size());
-	qh_freebuffers();
-	qh_freeqhull( False);
 }
 
 int main(int argc, char **argv)
@@ -356,18 +255,6 @@ int main(int argc, char **argv)
 	ros::NodeHandle n;
 
 	initQhull();
-
-//	return 0;
-//	qh facet_list (.next)
-//	qh facet_tail
-//	qh num_facets
-//	qh vertex_list (.next)
-//	vertex_tail
-//	qh num_vertices
-//	qh_init_A(NULL, null_sink, null_sink, argc, argv);
-////	qh_initqhull_start(infile, outfile, errfile);
-//	qh_initstatistics();
-//	qh_init_qhull_command(argc, argv);
 
 	// in ops: <component>.rosparam.getAll();
 	// in orocos: this->addProperty("robot_description", robot_description_);
@@ -511,7 +398,7 @@ int main(int argc, char **argv)
 			KDL::Frame T_B_F;
 			fk_solver.JntToCart(q, T_B_F, std::string("left") + *it);
 			KDL::Frame T_E_F = T_B_E.Inverse() * T_B_F;
-			points.push_back(T_E_F * KDL::Vector());
+			points.push_back(T_E_F * KDL::Vector(0.0, 0.0, 0.0));
 		}
 
 		for (std::vector<std::string>::const_iterator it = hand_distal.begin(); it != hand_distal.end(); it++)
@@ -519,18 +406,20 @@ int main(int argc, char **argv)
 			KDL::Frame T_B_F;
 			fk_solver.JntToCart(q, T_B_F, std::string("left") + *it);
 			KDL::Frame T_E_F = T_B_E.Inverse() * T_B_F;
-			points.push_back(T_E_F * KDL::Vector());
-			points.push_back(T_E_F * KDL::Vector(0.06, -0.02, 0.0));
+			points.push_back(T_E_F * KDL::Vector(0.0, 0.0, 0.0));
+			points.push_back(T_E_F * KDL::Vector(0.06, 0.0, 0.0));
+		}
+		int counter = 0;
+		for (std::vector<KDL::Vector>::iterator it = points.begin(); it != points.end(); it++)
+		{
+			m_id = publishSinglePointMarker(vis_pub, m_id, T_B_E*(*it), ((double)counter)/((double)(points.size()-1)), 0, 0, 0.02);
+			counter++;
 		}
 		calculateQhull(points, v_out, f_out);
-
-		int curlong, totlong; /* used !qh_NOmem */
-		qh_memfreeshort(&curlong, &totlong);
-		if (curlong || totlong)
-			fprintf(stderr, "qhull internal warning (main): did not free %d bytes of long memory(%d pieces)\n", totlong, curlong);
 		initQhull();
 
 		dm.updateConvex("conv1", v_out, f_out);
+
 		// iterate through all links
 		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
 		{
