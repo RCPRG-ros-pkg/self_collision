@@ -16,7 +16,7 @@ namespace self_collision
 class Geometry
 {
 public:
-	enum {CAPSULE};
+	enum {CAPSULE, CONVEX};
 	int type;
 	virtual void clear() = 0;
 private:
@@ -27,6 +27,15 @@ class Capsule : public Geometry
 public:
 	double radius;
 	double length;
+	virtual void clear();
+private:
+};
+
+class Convex : public Geometry
+{
+public:
+	typedef std::vector<std::pair<std::string, KDL::Vector> > ConvexPointsVector;
+	ConvexPointsVector points;
 	virtual void clear();
 private:
 };
@@ -60,6 +69,8 @@ public:
 private:
 	static bool parsePose(KDL::Frame &pose, TiXmlElement* xml);
 	static bool parseCapsule(Capsule &s, TiXmlElement *c);
+	static bool parsePoint(std::string &frame, KDL::Vector &p, TiXmlElement *c);
+	static bool parseConvex(Convex &s, TiXmlElement *c);
 	static boost::shared_ptr<Geometry> parseGeometry(TiXmlElement *g);
 	static bool parseCollision(Collision &col, TiXmlElement* config);
 	static bool parseLink(Link &link, TiXmlElement* config);

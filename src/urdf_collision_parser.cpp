@@ -19,6 +19,11 @@ void Capsule::clear()
 	length = 0.0;
 }
 
+void Convex::clear()
+{
+	points.clear();
+}
+
 void Collision::clear()
 {
 	// TODO
@@ -146,6 +151,63 @@ bool CollisionModel::parseCapsule(Capsule &s, TiXmlElement *c)
 	return true;
 }
 
+bool CollisionModel::parsePoint(std::string &frame, KDL::Vector &p, TiXmlElement *c)
+{
+	if (c)
+	{
+		const char* xyz_str = c->Attribute("xyz");
+		if (xyz_str != NULL)
+		{
+			try
+			{
+				p = initVectorFromString(xyz_str);
+			}
+			catch (urdf::ParseError &e)
+			{
+				ROS_ERROR("%s", e.what());
+				return false;
+			}
+		}
+		const char* frame_str = c->Attribute("frame");
+		if (frame_str != NULL)
+		{
+			try
+			{
+				frame = frame_str;
+			}
+			catch (urdf::ParseError &e)
+			{
+				ROS_ERROR("%s", e.what());
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool CollisionModel::parseConvex(Convex &s, TiXmlElement *c)
+{
+	s.clear();
+	s.type = Geometry::CONVEX;
+
+	for (TiXmlElement* col_xml = c->FirstChildElement("point"); col_xml; col_xml = col_xml->NextSiblingElement("point"))
+	{
+		std::string frame;
+		KDL::Vector point;
+		if (parsePoint(frame, point, col_xml))
+		{
+			s.points.push_back(std::make_pair<std::string, KDL::Vector>(frame, point));
+		}
+		else
+		{
+			ROS_ERROR("Could not parse point element for Convex");
+			return false;
+		}
+	}
+
+	return true;
+}
+
 boost::shared_ptr<Geometry> CollisionModel::parseGeometry(TiXmlElement *g)
 {
 	boost::shared_ptr<Geometry> geom;
@@ -162,6 +224,13 @@ boost::shared_ptr<Geometry> CollisionModel::parseGeometry(TiXmlElement *g)
 		Capsule *s = new Capsule();
 		geom.reset(s);
 		if (parseCapsule(*s, shape))
+			return geom;
+	}
+	else if (type_name == "convex")
+	{
+		Convex *s = new Convex();
+		geom.reset(s);
+		if (parseConvex(*s, shape))
 			return geom;
 	}
 	// TODO: add convex_hull type
@@ -203,38 +272,6 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 		return false;
 	}
 	link.name = std::string(name_char);
-	// Inertial (optional)
-/*	TiXmlElement *i = config->FirstChildElement("inertial");
-	if (i)
-	{
-		link.inertial.reset(new Inertial());
-		if (!parseInertial(*link.inertial, i))
-		{
-			logError("Could not parse inertial element for Link [%s]", link.name.c_str());
-			return false;
-		}
-	}
-	// Multiple Visuals (optional)
-	for (TiXmlElement* vis_xml = config->FirstChildElement("visual"); vis_xml; vis_xml = vis_xml->NextSiblingElement("visual"))
-	{
-		boost::shared_ptr<Visual> vis;
-		vis.reset(new Visual());
-		if (parseVisual(*vis, vis_xml))
-		{
-			link.visual_array.push_back(vis);
-		}
-		else
-		{
-			vis.reset();
-			logError("Could not parse visual element for Link [%s]", link.name.c_str());
-			return false;
-		}
-	}
-	// Visual (optional)
-	// Assign the first visual to the .visual ptr, if it exists
-	if (!link.visual_array.empty())
-		link.visual = link.visual_array[0];
-*/
 	// Multiple Collisions (optional)
 	for (TiXmlElement* col_xml = config->FirstChildElement("self_collision_checking"); col_xml; col_xml = col_xml->NextSiblingElement("self_collision_checking"))
 	{
@@ -251,10 +288,6 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 			return false;
 		}
 	}
-	// Collision (optional)
-	// Assign the first collision to the .collision ptr, if it exists
-//	if (!link.collision_array.empty())
-//		link.collision = link.collision_array[0];
 }
 
 boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &xml_string)
