@@ -31,6 +31,12 @@ extern "C" {
 typedef std::map<std::string, std::pair<int,double> > JointStatesMap;
 JointStatesMap joint_states_map;
 
+typedef struct
+{
+	int i[10];
+	int count;
+} Face;
+
 void joint_statesCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
 	size_t count = msg->name.size();
@@ -54,6 +60,7 @@ public:
 	DistanceMeasure();
 	void addCapsule(const std::string &name, double radius, double length);
 	void addConvex(std::string name);
+	void updateConvex(std::string name, const std::vector<KDL::Vector> &v, const std::vector<Face> &f);
 	double getDistance(const std::string &name1, const KDL::Frame &tf1, const std::string &name2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out);
 	int publishMarker(ros::Publisher &pub, int m_id, const std::string &name, const KDL::Frame tf);
 private:
@@ -101,6 +108,45 @@ Convex(Vec3f* plane_normals_,
 	polygons[8] = 3;	polygons[9] = 3;	polygons[10] = 2;	polygons[11] = 0;
 	polygons[12] = 3;	polygons[13] = 3;	polygons[14] = 2;	polygons[15] = 1;
 	map_[name] = std::make_pair<ObjectType, fcl_2::ShapeBase*>(CONVEX, static_cast<fcl_2::ShapeBase*>(new fcl_2::Convex(NULL, NULL, num_planes, points, num_points, polygons)));
+}
+
+void DistanceMeasure::updateConvex(std::string name, const std::vector<KDL::Vector> &v, const std::vector<Face> &f)
+{
+	ObjectsMap::iterator it = map_.find(name);
+	if (it != map_.end() && it->second.first == CONVEX)
+	{
+		fcl_2::Convex* ob = static_cast<fcl_2::Convex*>(it->second.second);
+		int poly_counter = 0;
+		for (std::vector<Face>::const_iterator it = f.begin(); it != f.end(); it++)
+		{
+			ob->polygons[poly_counter++] = it->count;
+			for (int i=0; i<it->count; i++)
+			{
+				ob->polygons[poly_counter++] = it->i[i];
+			}
+		}
+
+		ob->num_planes = f.size();
+
+		int points_counter = 0;
+		for (std::vector<KDL::Vector>::const_iterator it = v.begin(); it != v.end(); it++)
+		{
+			ob->points[points_counter++] = fcl_2::Vec3f(it->x(), it->y(), it->z());
+		}
+//  Vec3f* points;
+		ob->num_points = v.size();
+
+		ROS_INFO("DistanceMeasure::updateConvex: %d  %d", ob->num_planes, ob->num_points);
+		ob->fillEdges();
+//  int num_edges;
+//  int num_planes;
+
+	}
+	else
+	{
+		ROS_ERROR("DistanceMeasure::updateConvex: failure");
+	}
+
 }
 
 double DistanceMeasure::getDistance(const std::string &name1, const KDL::Frame &tf1, const std::string &name2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out)
@@ -221,52 +267,95 @@ int DistanceMeasure::publishMarker(ros::Publisher &pub, int m_id, const std::str
 	return m_id;
 }
 
-int main(int argc, char **argv)
+void initQhull()
 {
-	ros::init(argc, argv, "qhull_test");
-	ros::NodeHandle n;
+	static bool initialized = false;
 
-	FILE *null_sink = fopen("/dev/null", "w");
-	char qhull_command_const[] = "Qt i";
-	char qhull_command[256];
+	if (initialized)
+	{
+//		ROS_ERROR("initQhull: already initialized");
+//		return;
+	}
+
+	initialized = true;
+
+	static FILE *null_sink = fopen("/dev/null", "w");
+
+	static char qhull_command_const[] = "Qt i";
+	static char qhull_command[256];
 	memcpy(qhull_command, qhull_command_const, strlen(qhull_command_const) + 1);
 
-	// void qh_init_A(FILE *infile, FILE *outfile, FILE *errfile, int argc, char *argv[])
 	qh_init_A(NULL, null_sink, null_sink, 0, NULL);
 	qh_initflags( qhull_command );
-	// void qh_init_B(coordT *points, int numpoints, int dim, boolT ismalloc)
-	coordT *points = new coordT[4*3];
-	points[0] = 0;
-	points[1] = 0;
-	points[2] = 0;
-	points[3] = 1;
-	points[4] = 0;
-	points[5] = 0;
-	points[6] = 0;
-	points[7] = 1;
-	points[8] = 0;
-	points[9] = 0;
-	points[10] = 0;
-	points[11] = 1;
+}
 
-	qh_init_B(points, 4, 3, false);
+void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> &v_out, std::vector<Face> &f_out)
+{
+	ROS_INFO("calculateQhull 1: size: %ld", v.size());
+	// initialize points
+	static coordT points[100 * 3];
+	int counter = 0;
+	for (std::vector<KDL::Vector>::const_iterator it = v.begin(); it != v.end(); it++)
+	{
+		points[counter++] = it->x();
+		points[counter++] = it->y();
+		points[counter++] = it->z();
+	}
+	ROS_INFO("calculateQhull 2");
+
+	qh_init_B(points, v.size(), 3, false);
+
+	ROS_INFO("calculateQhull 3");
 
 	qh_qhull();
+
+	ROS_INFO("calculateQhull 4");
+
 	int faces_count = qh num_facets;
 	int vertices_count = qh num_vertices;
 	ROS_INFO("qhull test: vertices: %d  faces: %d", vertices_count, faces_count);
 
+	v_out.clear();
+	v_out.resize(vertices_count);
+	for (vertexT *v = qh vertex_list; v != qh vertex_tail; v = v->next)
+	{
+		ROS_INFO("%d", v->id);
+		v_out[v->id] = KDL::Vector(v->point[0], v->point[1], v->point[2]);
+//		v_out.push_back(KDL::Vector(v->point[0], v->point[1], v->point[2]));
+	}
+
+	f_out.clear();
 	for (facetT *f = qh facet_list; f != qh facet_tail; f = f->next)
 	{
+		Face face;
 		for (int v_idx=0; v_idx < f->vertices->maxsize; v_idx++)
 		{
 			if (f->vertices->e[v_idx].p == NULL)
 				break;
 			vertexT *v = static_cast<vertexT *>(f->vertices->e[v_idx].p);
-			std::cout << v->id << " ";
+			if (v_idx >= 10)
+			{
+				ROS_ERROR("v_idx >= 10");
+				break;
+			}
+			face.i[v_idx] = v->id;
+			face.count = v_idx+1;
+//			std::cout << v->id << " ";
 		}
-		std::cout << std::endl;
+		f_out.push_back(face);
 	}
+	ROS_INFO("f_out: %ld", f_out.size());
+	ROS_INFO("v_out: %ld", v_out.size());
+	qh_freebuffers();
+	qh_freeqhull( False);
+}
+
+int main(int argc, char **argv)
+{
+	ros::init(argc, argv, "qhull_test");
+	ros::NodeHandle n;
+
+	initQhull();
 
 //	return 0;
 //	qh facet_list (.next)
@@ -371,13 +460,34 @@ int main(int argc, char **argv)
 	dm.addConvex("conv1");
 	dm.addConvex("conv2");
 
+	std::vector<std::string> hand_proximal;
+	hand_proximal.push_back("_HandFingerOneKnuckleTwoLink");
+	hand_proximal.push_back("_HandFingerTwoKnuckleTwoLink");
+	hand_proximal.push_back("_HandFingerThreeKnuckleTwoLink");
+
+	std::vector<std::string> hand_distal;
+	hand_distal.push_back("_HandFingerOneKnuckleThreeLink");
+	hand_distal.push_back("_HandFingerTwoKnuckleThreeLink");
+	hand_distal.push_back("_HandFingerThreeKnuckleThreeLink");
+
+	std::vector<KDL::Vector> v_out;
+	std::vector<Face> f_out;
+
 	double angle = 0.0;
 	while (ros::ok())
 	{
 		int m_id = 0;
+		// rewrite joint positions from joint_states_map to q
+		for (JointStatesMap::iterator js_it = joint_states_map.begin(); js_it != joint_states_map.end(); js_it++)
+		{
+			q(js_it->second.first) = js_it->second.second;
+		}
 
 		//
-		KDL::Frame T_o1(KDL::Rotation::RotZ(angle), KDL::Vector(-0.5,0,2));
+//		KDL::Frame T_o1(KDL::Rotation::RotZ(angle), KDL::Vector(-0.5,0,2));
+		KDL::Frame T_B_E;
+		fk_solver.JntToCart(q, T_B_E, "left_HandPalmLink");
+		KDL::Frame T_o1 = T_B_E;
 
 		KDL::Frame T_o2(KDL::Rotation::RotY(angle*1.12678891379912), KDL::Vector(0.5,0,2));
 
@@ -393,12 +503,34 @@ int main(int argc, char **argv)
 		//
 
 
-		// rewrite joint positions from joint_states_map to q
-		for (JointStatesMap::iterator js_it = joint_states_map.begin(); js_it != joint_states_map.end(); js_it++)
+
+		// get qhull for left gripper
+		std::vector<KDL::Vector> points;
+		for (std::vector<std::string>::const_iterator it = hand_proximal.begin(); it != hand_proximal.end(); it++)
 		{
-			q(js_it->second.first) = js_it->second.second;
+			KDL::Frame T_B_F;
+			fk_solver.JntToCart(q, T_B_F, std::string("left") + *it);
+			KDL::Frame T_E_F = T_B_E.Inverse() * T_B_F;
+			points.push_back(T_E_F * KDL::Vector());
 		}
 
+		for (std::vector<std::string>::const_iterator it = hand_distal.begin(); it != hand_distal.end(); it++)
+		{
+			KDL::Frame T_B_F;
+			fk_solver.JntToCart(q, T_B_F, std::string("left") + *it);
+			KDL::Frame T_E_F = T_B_E.Inverse() * T_B_F;
+			points.push_back(T_E_F * KDL::Vector());
+			points.push_back(T_E_F * KDL::Vector(0.06, -0.02, 0.0));
+		}
+		calculateQhull(points, v_out, f_out);
+
+		int curlong, totlong; /* used !qh_NOmem */
+		qh_memfreeshort(&curlong, &totlong);
+		if (curlong || totlong)
+			fprintf(stderr, "qhull internal warning (main): did not free %d bytes of long memory(%d pieces)\n", totlong, curlong);
+		initQhull();
+
+		dm.updateConvex("conv1", v_out, f_out);
 		// iterate through all links
 		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
 		{

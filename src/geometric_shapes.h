@@ -458,10 +458,12 @@ public:
   }
 
   
+  /// @brief Get edge information 
+  void fillEdges();
 
 protected:
   /// @brief Get edge information 
-  void fillEdges();
+//  void fillEdges();
 };
 
 
