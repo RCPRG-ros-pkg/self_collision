@@ -356,22 +356,6 @@ int main(int argc, char **argv)
 	KDL::TreeFkSolverPos_recursive fk_solver(robot_tree);
 	KDL::JntArray q(joints);
 
-//	dm.addCapsule("caps1", 0.1, 0.2);
-//	dm.addCapsule("caps2", 0.1, 0.3);
-
-//	dm.addConvex("conv1");
-//	dm.addConvex("conv2");
-
-/*	std::vector<std::string> hand_proximal;
-	hand_proximal.push_back("_HandFingerOneKnuckleTwoLink");
-	hand_proximal.push_back("_HandFingerTwoKnuckleTwoLink");
-	hand_proximal.push_back("_HandFingerThreeKnuckleTwoLink");
-
-	std::vector<std::string> hand_distal;
-	hand_distal.push_back("_HandFingerOneKnuckleThreeLink");
-	hand_distal.push_back("_HandFingerTwoKnuckleThreeLink");
-	hand_distal.push_back("_HandFingerThreeKnuckleThreeLink");
-*/
 	double angle = 0.0;
 	while (ros::ok())
 	{
@@ -383,8 +367,7 @@ int main(int argc, char **argv)
 		}
 
 		//
-//		KDL::Frame T_o1(KDL::Rotation::RotZ(angle), KDL::Vector(-0.5,0,2));
-		KDL::Frame T_B_E;
+/*		KDL::Frame T_B_E;
 		fk_solver.JntToCart(q, T_B_E, "left_HandPalmLink");
 		KDL::Frame T_o1 = T_B_E;
 
@@ -395,41 +378,9 @@ int main(int argc, char **argv)
 
 		ROS_INFO("%lf    %lf  %lf  %lf    %lf  %lf  %lf", distance, d1[0], d1[1], d1[2], d2[0], d2[1], d2[2]);
 
-//		m_id = dm.publishMarker(vis_pub, m_id, "conv1", T_o1);
-//		m_id = dm.publishMarker(vis_pub, m_id, "conv2", T_o2);
-//		m_id = publishLineMarker(vis_pub, m_id, d1, d2, 0,0,1);
 		angle += 0.01;
-		//
+*/		//
 
-		// get qhull for left gripper
-/*		std::vector<KDL::Vector> points;
-		for (std::vector<std::string>::const_iterator it = hand_proximal.begin(); it != hand_proximal.end(); it++)
-		{
-			KDL::Frame T_B_F;
-			fk_solver.JntToCart(q, T_B_F, std::string("left") + *it);
-			KDL::Frame T_E_F = T_B_E.Inverse() * T_B_F;
-			points.push_back(T_E_F * KDL::Vector(0.0, 0.0, 0.0));
-		}
-
-		for (std::vector<std::string>::const_iterator it = hand_distal.begin(); it != hand_distal.end(); it++)
-		{
-			KDL::Frame T_B_F;
-			fk_solver.JntToCart(q, T_B_F, std::string("left") + *it);
-			KDL::Frame T_E_F = T_B_E.Inverse() * T_B_F;
-			points.push_back(T_E_F * KDL::Vector(0.0, 0.0, 0.0));
-			points.push_back(T_E_F * KDL::Vector(0.06, 0.0, 0.0));
-		}
-		int counter = 0;
-		for (std::vector<KDL::Vector>::iterator it = points.begin(); it != points.end(); it++)
-		{
-			m_id = publishSinglePointMarker(vis_pub, m_id, T_B_E*(*it), ((double)counter)/((double)(points.size()-1)), 0, 0, 0.02);
-			counter++;
-		}
-*/
-//		calculateQhull(points, v_out, f_out);
-//		initQhull();
-
-//		dm.updateConvex("conv1", v_out, f_out);
 
 		// iterate through all links
 		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
