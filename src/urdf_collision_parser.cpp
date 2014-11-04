@@ -290,6 +290,86 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 	}
 }
 
+CollisionModel::CollisionModel()
+{
+}
+
+bool CollisionModel::parseDisableCollision(std::string &link1, std::string &link2, TiXmlElement *c)
+{
+	const char* link1_str = c->Attribute("link1");
+	const char* link2_str = c->Attribute("link2");
+	if (link1_str != NULL && link2_str != NULL)
+	{
+		link1 = link1_str;
+		link2 = link2_str;
+		return true;
+	}
+	ROS_ERROR("disable_collisions has wrong attributes");
+
+	return false;
+}
+
+void CollisionModel::parseSRDF(const std::string &xml_string)
+{
+	disabled_collisions.clear();
+
+	TiXmlDocument xml_doc;
+	xml_doc.Parse(xml_string.c_str());
+	if (xml_doc.Error())
+	{
+		ROS_ERROR("%s", xml_doc.ErrorDesc());
+		xml_doc.ClearError();
+		return;
+	}
+
+	TiXmlElement *robot_xml = xml_doc.FirstChildElement("robot");
+	if (!robot_xml)
+	{
+		ROS_ERROR("Could not find the 'robot' element in the xml file");
+		return;
+	}
+	// Get robot name
+	const char *name = robot_xml->Attribute("name");
+	if (!name)
+	{
+		ROS_ERROR("No name given for the robot.");
+		return;
+	}
+
+	if (name_ != std::string(name))
+	{
+		ROS_ERROR("Name from SRDF: %s differ from %s", name, name_.c_str());
+		return;
+	}
+
+	// Get all disable_collisions elements
+	for (TiXmlElement* disable_collision_xml = robot_xml->FirstChildElement("disable_collisions"); disable_collision_xml; disable_collision_xml = disable_collision_xml->NextSiblingElement("disable_collisions"))
+	{
+		std::string link1, link2;
+		try {
+			parseDisableCollision(link1, link2, disable_collision_xml);
+
+			if (links_.find(link1) == links_.end())
+			{
+				ROS_ERROR("link '%s' does not exist.", link1.c_str());
+				return;
+			}
+			if (links_.find(link2) == links_.end())
+			{
+				ROS_ERROR("link '%s' does not exist.", link2.c_str());
+				return;
+			}
+			disabled_collisions.push_back(std::make_pair<std::string, std::string>(link1, link2));
+		}
+		catch (urdf::ParseError &e) {
+			ROS_ERROR("disable_collisions xml is not initialized correctly");
+			return;
+		}
+	}
+
+
+}
+
 boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &xml_string)
 {
 	boost::shared_ptr<CollisionModel> model(new CollisionModel);

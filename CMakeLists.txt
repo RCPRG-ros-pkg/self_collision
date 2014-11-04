@@ -107,7 +107,7 @@ include_directories(
 # )
 
 ## Declare a cpp executable
- add_executable(qhull_test src/qhull_test.cpp src/urdf_collision_parser.cpp src/marker_publisher.cpp src/qhull_interface.cpp src/gjk.cpp src/transform.cpp src/intersect.cpp src/narrowphase.cpp src/geometric_shapes.cpp)
+ add_executable(qhull_test src/qhull_test.cpp src/urdf_collision_parser.cpp src/marker_publisher.cpp src/qhull_interface.cpp src/distance_measure.cpp src/gjk.cpp src/transform.cpp src/intersect.cpp src/narrowphase.cpp src/geometric_shapes.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes

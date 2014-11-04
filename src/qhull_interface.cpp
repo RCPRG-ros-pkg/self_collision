@@ -1,8 +1,4 @@
 #include "ros/ros.h"
-//#include "sensor_msgs/JointState.h"
-//#include "visualization_msgs/MarkerArray.h"
-//#include "geometry_msgs/Point.h"
-//#include "urdf/model.h"
 
 #include <iostream>
 
@@ -16,13 +12,7 @@ extern "C" {
 #include <libqhull/libqhull.h>
 #endif
 
-
-//#include <kdl_parser/kdl_parser.hpp>
-//#include "self_collision_test/urdf_collision_parser.h"
-//#include <kdl/chainfksolverpos_recursive.hpp>
-//#include <kdl/treefksolverpos_recursive.hpp>
 #include "qhull_interface.h"
-//#include "narrowphase.h"
 
 void initQhull()
 {

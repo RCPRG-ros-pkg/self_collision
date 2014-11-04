@@ -2,12 +2,8 @@
 #define URDF_COLLISION_PARSER_H
 
 #include "ros/ros.h"
-//#include "std_msgs/String.h"
-//#include "visualization_msgs/MarkerArray.h"
-//#include "urdf/model.h"
-
-//#include <iostream>
-#include <kdl_parser/kdl_parser.hpp>
+//#include <kdl_parser/kdl_parser.hpp>
+#include <kdl/frames.hpp>
 #include <tinyxml.h>
 
 namespace self_collision
@@ -63,10 +59,19 @@ class CollisionModel
 {
 public:
 	static boost::shared_ptr<CollisionModel> parseURDF(const std::string &xml_string);
+	void parseSRDF(const std::string &xml_string);
+
 	std::string name_;
+
+	typedef std::vector<std::pair<std::string, std::string> > DisabledCollisions;
+	DisabledCollisions disabled_collisions;
 
 	boost::shared_ptr< const Link > getLink(const std::string &name);
 private:
+	CollisionModel();
+
+	bool parseDisableCollision(std::string &link1, std::string &link2, TiXmlElement *c);
+
 	static bool parsePose(KDL::Frame &pose, TiXmlElement* xml);
 	static bool parseCapsule(Capsule &s, TiXmlElement *c);
 	static bool parsePoint(std::string &frame, KDL::Vector &p, TiXmlElement *c);
