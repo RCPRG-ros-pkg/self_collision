@@ -121,10 +121,11 @@ int main(int argc, char **argv)
 	node.param("robot_semantic_description", robot_semantic_description_, std::string());
 
 	collision_model->parseSRDF(robot_semantic_description_);
+	collision_model->generateCollisionPairs();
 
 //	ROS_INFO("%ld", collision_model->disabled_collisions.size());
+//	ROS_INFO("%ld", collision_model->enabled_collisions.size());
 //	return 0;
-
 
 	// subscribe to joint_states
 	ros::Subscriber sub = n.subscribe("joint_states", 1000, joint_statesCallback);
@@ -159,7 +160,6 @@ int main(int argc, char **argv)
 	}
 
 	std::cout << "joints count: " << joints << std::endl;
-
 
 	double angle = 0.0;
 	while (ros::ok())

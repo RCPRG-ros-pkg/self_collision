@@ -1,12 +1,6 @@
 #include "ros/ros.h"
-//#include "std_msgs/String.h"
-//#include "visualization_msgs/MarkerArray.h"
 #include "self_collision_test/urdf_collision_parser.h"
-
 #include "urdf/model.h"
-
-//#include <iostream>
-//#include <kdl_parser/kdl_parser.hpp>
 #include <kdl/frames.hpp>
 #include <tinyxml.h>
 
@@ -373,7 +367,6 @@ void CollisionModel::parseSRDF(const std::string &xml_string)
 boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &xml_string)
 {
 	boost::shared_ptr<CollisionModel> model(new CollisionModel);
-//	model->clear();
 	TiXmlDocument xml_doc;
 	xml_doc.Parse(xml_string.c_str());
 	if (xml_doc.Error())
@@ -399,34 +392,6 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 		return model;
 	}
 	model->name_ = std::string(name);
-	// Get all Material elements... NOT!
-/*	for (TiXmlElement* material_xml = robot_xml->FirstChildElement("material"); material_xml; material_xml = material_xml->NextSiblingElement("material"))
-	{
-		boost::shared_ptr<Material> material;
-		material.reset(new Material);
-		try {
-			parseMaterial(*material, material_xml, false); // material needs to be fully defined here
-			if (model->getMaterial(material->name))
-			{
-				ROS_ERROR("material '%s' is not unique.", material->name.c_str());
-				material.reset();
-				model.reset();
-				return model;
-			}
-			else
-			{
-				model->materials_.insert(make_pair(material->name,material));
-				logDebug("urdfdom: successfully added a new material '%s'", material->name.c_str());
-			}
-		}
-		catch (ParseError &e) {
-			ROS_ERROR("material xml is not initialized correctly");
-			material.reset();
-			model.reset();
-			return model;
-		}
-	}
-*/
 	// Get all Link elements
 	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"))
 	{
@@ -443,33 +408,7 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 			else
 			{
 				// set link visual material
-/*				ROS_INFO("urdfdom: setting link '%s' material", link->name.c_str());
-				if (link->visual)
-				{
-					if (!link->visual->material_name.empty())
-					{
-						if (model->getMaterial(link->visual->material_name))
-						{
-							ROS_INFO("urdfdom: setting link '%s' material to '%s'", link->name.c_str(),link->visual->material_name.c_str());
-							link->visual->material = model->getMaterial( link->visual->material_name.c_str() );
-						}
-						else
-						{
-							if (link->visual->material)
-							{
-								ROS_INFO("urdfdom: link '%s' material '%s' defined in Visual.", link->name.c_str(),link->visual->material_name.c_str());
-								model->materials_.insert(make_pair(link->visual->material->name,link->visual->material));
-							}
-							else
-							{
-								ROS_ERROR("link '%s' material '%s' undefined.", link->name.c_str(),link->visual->material_name.c_str());
-								model.reset();
-								return model;
-							}
-						}
-					}
-				}
-*/				model->links_.insert(make_pair(link->name,link));
+				model->links_.insert(make_pair(link->name,link));
 				ROS_INFO("urdfdom: successfully added a new link '%s'", link->name.c_str());
 			}
 		}
@@ -484,62 +423,53 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 		model.reset();
 		return model;
 	}
-	// Get all Joint elements... NOT!
-/*	for (TiXmlElement* joint_xml = robot_xml->FirstChildElement("joint"); joint_xml; joint_xml = joint_xml->NextSiblingElement("joint"))
-	{
-		boost::shared_ptr<Joint> joint;
-		joint.reset(new Joint);
-		if (parseJoint(*joint, joint_xml))
-		{
-			if (model->getJoint(joint->name))
-			{
-				ROS_ERROR("joint '%s' is not unique.", joint->name.c_str());
-				model.reset();
-				return model;
-			}
-			else
-			{
-				model->joints_.insert(make_pair(joint->name,joint));
-				logDebug("urdfdom: successfully added a new joint '%s'", joint->name.c_str());
-			}
-		}
-		else
-		{
-			ROS_ERROR("joint xml is not initialized correctly");
-			model.reset();
-			return model;
-		}
-	}
-*/
-	// every link has children links and joints, but no parents, so we create a
-	// local convenience data structure for keeping child->parent relations
-/*	std::map<std::string, std::string> parent_link_tree;
-	parent_link_tree.clear();
-	// building tree: name mapping
-	try
-	{
-		model->initTree(parent_link_tree);
-	}
-	catch(ParseError &e)
-	{
-		ROS_ERROR("Failed to build tree: %s", e.what());
-		model.reset();
-		return model;
-	}
-	// find the root link
-	try
-	{
-		model->initRoot(parent_link_tree);
-	}
-	catch(ParseError &e)
-	{
-		ROS_ERROR("Failed to find root link: %s", e.what());
-		model.reset();
-		return model;
-	}
-*/
 	return model;
 }
 
+void CollisionModel::generateCollisionPairs()
+{
+	enabled_collisions.clear();
+	ROS_INFO("%ld", links_.size());
+
+	for (LinkMap::iterator it1 = links_.begin(); it1 != links_.end(); it1++)
+	{
+		for (LinkMap::iterator it2 = links_.begin(); it2 != links_.end(); it2++)
+		{
+			if (it1->first == it2->first)
+			{
+				continue;
+			}
+			bool add = true;
+			for (CollisionPairs::iterator dc_it = disabled_collisions.begin(); dc_it != disabled_collisions.end(); dc_it++)
+			{
+				if (	(dc_it->first == it1->first && dc_it->second == it2->first) ||
+					(dc_it->second == it1->first && dc_it->first == it2->first) )
+				{
+					add = false;
+					break;
+				}
+			}
+			if (add)
+			{
+				for (CollisionPairs::iterator ec_it = enabled_collisions.begin(); ec_it != enabled_collisions.end(); ec_it++)
+				{
+					if (	(ec_it->first == it1->first && ec_it->second == it2->first) ||
+						(ec_it->second == it1->first && ec_it->first == it2->first) )
+					{
+						add = false;
+						break;
+					}
+				}
+
+				if (add)
+				{
+					enabled_collisions.push_back(std::make_pair<std::string, std::string>(it1->first, it2->first));
+				}
+			}
+		}
+	}
+}
+
 }	// namespace self_collision
+
 

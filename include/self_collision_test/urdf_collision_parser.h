@@ -2,7 +2,6 @@
 #define URDF_COLLISION_PARSER_H
 
 #include "ros/ros.h"
-//#include <kdl_parser/kdl_parser.hpp>
 #include <kdl/frames.hpp>
 #include <tinyxml.h>
 
@@ -63,10 +62,12 @@ public:
 
 	std::string name_;
 
-	typedef std::vector<std::pair<std::string, std::string> > DisabledCollisions;
-	DisabledCollisions disabled_collisions;
+	typedef std::vector<std::pair<std::string, std::string> > CollisionPairs;
+	CollisionPairs disabled_collisions;
+	CollisionPairs enabled_collisions;
 
 	boost::shared_ptr< const Link > getLink(const std::string &name);
+	void generateCollisionPairs();
 private:
 	CollisionModel();
 
