@@ -354,6 +354,7 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 	{
 		boost::shared_ptr<Collision> col;
 		col.reset(new Collision());
+		col->parent_.reset(&link);
 		if (parseCollision(*col, col_xml))
 		{
 			link.collision_array.push_back(col);
@@ -516,8 +517,16 @@ void CollisionModel::generateCollisionPairs()
 
 	for (LinkMap::iterator it1 = links_.begin(); it1 != links_.end(); it1++)
 	{
+		if (it1->second->collision_array.size() == 0)
+		{
+			continue;
+		}
 		for (LinkMap::iterator it2 = links_.begin(); it2 != links_.end(); it2++)
 		{
+			if (it2->second->collision_array.size() == 0)
+			{
+				continue;
+			}
 			if (it1->first == it2->first)
 			{
 				continue;
@@ -553,13 +562,19 @@ void CollisionModel::generateCollisionPairs()
 	}
 }
 
-double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out)
+double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out, double d0)
 {
 	if (geom1.type == Geometry::CAPSULE && geom2.type == Geometry::CAPSULE)
 	{
 //		ROS_INFO("DistanceMeasure::getDistance: CAPSULE,CAPSULE");
 		const fcl_2::Capsule* ob1 = static_cast<const fcl_2::Capsule*>(geom1.shape.get());
 		const fcl_2::Capsule* ob2 = static_cast<const fcl_2::Capsule*>(geom2.shape.get());
+
+		// calculate narrowphase distance
+		if ((tf1.p - tf2.p).Norm() > (ob1->radius + ob1->lz)/2.0 + (ob2->radius + ob2->lz)/2.0 + d0)
+		{
+			return d0 * 2.0;
+		}
 
 		// capsules are shifted by length/2
 		double x1,y1,z1,w1, x2, y2, z2, w2;
@@ -587,6 +602,15 @@ double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1,
 		const fcl_2::Capsule* ob1 = static_cast<const fcl_2::Capsule*>(geom1.shape.get());
 		const fcl_2::Convex* ob2 = static_cast<const fcl_2::Convex*>(geom2.shape.get());
 
+		const Convex *conv2 = static_cast<const Convex*>(&geom2);
+
+		// calculate narrowphase distance
+		if ((tf1.p - tf2 * conv2->center_).Norm() > (ob1->radius + ob1->lz)/2.0 + conv2->radius_ + d0)
+		{
+			return d0 * 2.0;
+		}
+
+
 		// capsules are shifted by length/2
 		double x1,y1,z1,w1, x2, y2, z2, w2;
 		KDL::Frame tf1_corrected = tf1;// * KDL::Frame(KDL::Vector(0,0,-ob1->lz/2.0));
@@ -612,6 +636,14 @@ double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1,
 		const fcl_2::Convex* ob1 = static_cast<const fcl_2::Convex*>(geom1.shape.get());
 		const fcl_2::Capsule* ob2 = static_cast<const fcl_2::Capsule*>(geom2.shape.get());
 
+		const Convex *conv1 = static_cast<const Convex*>(&geom1);
+
+		// calculate narrowphase distance
+		if ((tf2.p - tf1 * conv1->center_).Norm() > (ob2->radius + ob2->lz)/2.0 + conv1->radius_ + d0)
+		{
+			return d0 * 2.0;
+		}
+
 		// capsules are shifted by length/2
 		double x1,y1,z1,w1, x2, y2, z2, w2;
 		tf1.M.GetQuaternion(x1,y1,z1,w1);
@@ -636,6 +668,15 @@ double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1,
 //		ROS_INFO("DistanceMeasure::getDistance: CONVEX,CONVEX");
 		const fcl_2::Convex* ob1 = static_cast<const fcl_2::Convex*>(geom1.shape.get());
 		const fcl_2::Convex* ob2 = static_cast<const fcl_2::Convex*>(geom2.shape.get());
+
+		const Convex *conv1 = static_cast<const Convex*>(&geom1);
+		const Convex *conv2 = static_cast<const Convex*>(&geom2);
+
+		// calculate narrowphase distance
+		if ((tf1 * conv1->center_ - tf2 * conv2->center_).Norm() > conv1->radius_ + conv2->radius_ + d0)
+		{
+			return d0 * 2.0;
+		}
 
 		double x1,y1,z1,w1, x2, y2, z2, w2;
 		tf1.M.GetQuaternion(x1,y1,z1,w1);

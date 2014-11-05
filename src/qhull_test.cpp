@@ -16,6 +16,13 @@
 #include "marker_publisher.h"
 #include "qhull_interface.h"
 
+// for memory allocation tests
+#include <malloc.h>
+#include <pthread.h>
+
+// for time measurment tests
+#include <sys/time.h>
+
 typedef std::map<std::string, std::pair<int,double> > JointStatesMap;
 JointStatesMap joint_states_map;
 
@@ -33,15 +40,78 @@ void joint_statesCallback(const sensor_msgs::JointState::ConstPtr& msg)
 	}
 }
 
+void *(*old_malloc_hook) (size_t size, const void *caller);
+//void (*old_free_hook) (void *ptr, const void *caller);
+
+int malloc_count = 0;
+int free_count = 0;
+
+static void *my_malloc_hook (size_t size, const void *caller);
+//static void my_free_hook (void *ptr, const void *caller);
+
+pthread_mutex_t malloc_mutex;
+
+static void *my_malloc_hook (size_t size, const void *caller)
+{
+	pthread_mutex_lock(&malloc_mutex);
+	void *result;
+	/* Restore all old hooks */
+	__malloc_hook = old_malloc_hook;
+//	__free_hook = old_free_hook;
+	/* Call recursively */
+	result = malloc (size);
+	/* Save underlying hooks */
+//	old_malloc_hook = __malloc_hook;
+//	old_free_hook = __free_hook;
+
+	malloc_count++;
+	/* printf might call malloc, so protect it too. */
+//	printf ("malloc (%u) returns %p\n", (unsigned int) size, result);
+	/* Restore our own hooks */
+	__malloc_hook = my_malloc_hook;
+//	__free_hook = my_free_hook;
+	pthread_mutex_unlock(&malloc_mutex);
+	return result;
+}
+/*
+static void my_free_hook (void *ptr, const void *caller)
+{
+	pthread_mutex_lock(&malloc_mutex);
+	__malloc_hook = old_malloc_hook;
+	__free_hook = old_free_hook;
+	free (ptr);
+
+	free_count++;
+//	printf ("freed pointer %p\n", ptr);
+	__malloc_hook = my_malloc_hook;
+	__free_hook = my_free_hook;
+	pthread_mutex_unlock(&malloc_mutex);
+}
+*/
+void enableMallocHook()
+{
+	pthread_mutex_lock(&malloc_mutex);
+	old_malloc_hook = __malloc_hook;
+//	old_free_hook = __free_hook;
+	__malloc_hook = my_malloc_hook;
+//	__free_hook = my_free_hook;
+	pthread_mutex_unlock(&malloc_mutex);
+}
+
+void disableMallocHook()
+{
+	pthread_mutex_lock(&malloc_mutex);
+	__malloc_hook = old_malloc_hook;
+//	__free_hook = old_free_hook;
+	pthread_mutex_unlock(&malloc_mutex);
+}
+
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "qhull_test");
 	ros::NodeHandle n;
 
 	initQhull();
-
-	// in ops: <component>.rosparam.getAll();
-	// in orocos: this->addProperty("robot_description", robot_description_);
 
 	// read KDL::Tree form the robot_description
 	KDL::Tree robot_tree;
@@ -64,48 +134,9 @@ int main(int argc, char **argv)
 	std::vector< boost::shared_ptr< urdf::Link > > links_;
 	robot_model_.getLinks(links_);
 
-	// save robot joints
-/*	for (std::map< std::string, boost::shared_ptr< urdf::Joint > >::const_iterator j_it = robot_model_.joints_.begin(); j_it != robot_model_.joints_.end(); j_it++)
-	{
-		std::cout << j_it->first << std::endl;
-		joint_states_map[j_it->first] = 0.0;
-	}
-*/
-
 	ROS_INFO("parsing robot_description for self-collision data");
 	boost::shared_ptr<self_collision::CollisionModel> collision_model = self_collision::CollisionModel::parseURDF(robot_description_);
-/*
-	for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
-	{
-		boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
 
-		std::cout << (*l_it)->name.c_str() << std::endl;
-//		ROS_INFO("link: %s  %s, collision geometries: %lu", (*l_it)->name.c_str(), link->name.c_str(), link->collision_array.size());
-
-		int collision_geom_idx = 0;
-		for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
-		{
-			char idx_str[20];
-			sprintf(idx_str, "_%d", collision_geom_idx);
-			switch ((*c_it)->geometry->type)
-			{
-				case self_collision::Geometry::CAPSULE:
-					{
-						ROS_INFO("      CAPSULE");
-						break;
-					}
-				case self_collision::Geometry::CONVEX:
-					{
-						ROS_INFO("      CONVEX");
-						break;
-					}
-				default:
-					ROS_ERROR("Unknown collision geometry type");
-			}
-			collision_geom_idx++;
-		}
-	}
-*/
 	// read robot semantic description
 	ROS_INFO("parsing robot_semantic_description for self-collision data");
 	std::string robot_semantic_description_;
@@ -114,9 +145,8 @@ int main(int argc, char **argv)
 	collision_model->parseSRDF(robot_semantic_description_);
 	collision_model->generateCollisionPairs();
 
-//	ROS_INFO("%ld", collision_model->disabled_collisions.size());
-//	ROS_INFO("%ld", collision_model->enabled_collisions.size());
-//	return 0;
+	ROS_INFO("%ld", collision_model->disabled_collisions.size());
+	ROS_INFO("%ld", collision_model->enabled_collisions.size());
 
 	// subscribe to joint_states
 	ros::Subscriber sub = n.subscribe("joint_states", 1000, joint_statesCallback);
@@ -159,18 +189,47 @@ int main(int argc, char **argv)
 		transformation_map[(*l_it)->name] = KDL::Frame();
 	}
 
+	// create vector of convex hulls for quick update
+	self_collision::Link::VecPtrCollision convex_hull_vector;
+	// iterate through all links
+	for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+	{
+		boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
+		// iterate through collision objects
+		for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
+		{
+			if ((*c_it)->geometry->type == self_collision::Geometry::CONVEX)
+			{
+				convex_hull_vector.push_back(*c_it);
+			}
+		}
+	}
+
+	pthread_mutex_init(&malloc_mutex, NULL);
+
+	const double param_d0 = 0.15;
 	clearMarkers(vis_pub, 0, 1000);
 	int m_id = 0;
 	int last_m_id = 0;
 	double angle = 0.0;
 	while (ros::ok())
 	{
+		// clear markers
 		if (m_id < last_m_id)
 		{
 			clearMarkers(vis_pub, m_id, last_m_id+1);
 		}
 		last_m_id = m_id;
 		m_id = 0;
+
+		// start time measurement
+		timespec ts1, ts2, ts3;
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts1);
+//		clock_gettime(CLOCK_REALTIME, &ts1);
+
+		// enable malloc hook
+//		enableMallocHook();
+
 		// rewrite joint positions from joint_states_map to q
 		for (JointStatesMap::iterator js_it = joint_states_map.begin(); js_it != joint_states_map.end(); js_it++)
 		{
@@ -188,83 +247,9 @@ int main(int argc, char **argv)
 			}
 		}
 
-		//
-/*		KDL::Frame T_B_E;
-		fk_solver.JntToCart(q, T_B_E, "left_HandPalmLink");
-		KDL::Frame T_o1 = T_B_E;
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts2);
 
-		KDL::Frame T_o2(KDL::Rotation::RotY(angle*1.12678891379912), KDL::Vector(0.5,0,2));
-
-		KDL::Vector d1, d2;
-		double distance = dm.getDistance("conv1", T_o1, "conv2", T_o2, d1, d2);
-
-		ROS_INFO("%lf    %lf  %lf  %lf    %lf  %lf  %lf", distance, d1[0], d1[1], d1[2], d2[0], d2[1], d2[2]);
-
-		angle += 0.01;
-*/		//
-
-
-/*	KDL::Frame T_B_E;
-	int result = fk_solver.JntToCart(q, T_B_E, "right_HandPalmLink");
-	if (result != 0)
-		ROS_ERROR("fk_solver failed");
-	KDL::Frame fr2(KDL::Rotation::RotY(90.0/180.0*3.1415), KDL::Vector(0.075,0,0.2));
-	KDL::Frame fr = T_B_E * fr2;
-
-//	m_id = publishCapsule(vis_pub, m_id, fr, 0.25, 0.04);
-	m_id = publishCylinder(vis_pub, m_id, fr, 0.15, 0.04);
-
-		ros::spinOnce();
-
-		ros::Duration(0.05).sleep();
-		continue;
-*/
-		// iterate through all links
-		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
-		{
-			boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
-
-			// iterate through collision objects
-			for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
-			{
-				char idx_str[20];
-				switch ((*c_it)->geometry->type)
-				{
-					case self_collision::Geometry::CAPSULE:
-						{
-							self_collision::Capsule* capsule = static_cast<self_collision::Capsule*>((*c_it)->geometry.get());
-							KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
-							m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, T_B_L * (*c_it)->origin);
-							break;
-						}
-					case self_collision::Geometry::CONVEX:
-						{
-							self_collision::Convex* convex = static_cast<self_collision::Convex*>((*c_it)->geometry.get());
-							KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
-
-							std::vector<KDL::Vector> points;
-
-							for (self_collision::Convex::ConvexPointsVector::iterator it = convex->points.begin(); it != convex->points.end(); it++)
-							{
-								KDL::Frame &T_B_F = transformation_map[it->first];
-								KDL::Frame T_E_F = (T_B_L * (*c_it)->origin).Inverse() * T_B_F;
-								points.push_back(T_E_F * it->second);
-							}
-							std::vector<KDL::Vector> v_out;
-							std::vector<Face> f_out;
-
-							calculateQhull(points, v_out, f_out);
-							initQhull();
-							convex->updateConvex(v_out, f_out);
-							m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, T_B_L * (*c_it)->origin);
-							break;
-						}
-					default:
-						ROS_ERROR("Unknown collision geometry type");
-				}
-			}
-		}
-
+		// tests
 		if (false)
 		{
 			self_collision::Capsule caps;
@@ -284,27 +269,28 @@ int main(int argc, char **argv)
 			KDL::Frame T_l1(KDL::Rotation::RotY(30.0/180.0*3.1415), KDL::Vector(0.175,0,2.2)), T_l2(KDL::Vector(-0.2,0,2.2));
 
 			double distance;
-			distance = self_collision::CollisionModel::getDistance(caps, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l1, conv, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l2, d1, d2);
+			distance = self_collision::CollisionModel::getDistance(caps, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l1, conv, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l2, d1, d2, param_d0);
 			m_id = caps.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l1);
 			m_id = conv.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l2);
 			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
 
-			distance = self_collision::CollisionModel::getDistance(conv, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l1, caps, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l2, d1, d2);
+			distance = self_collision::CollisionModel::getDistance(conv, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l1, caps, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l2, d1, d2, param_d0);
 			m_id = conv.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l1);
 			m_id = caps.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l2);
 			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
 
-			distance = self_collision::CollisionModel::getDistance(caps2, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l1, caps, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l2, d1, d2);
+			distance = self_collision::CollisionModel::getDistance(caps2, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l1, caps, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l2, d1, d2, param_d0);
 			m_id = caps2.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l1);
 			m_id = caps.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l2);
 			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
 
-			distance = self_collision::CollisionModel::getDistance(conv2, T_l1, conv, T_l2, d1, d2);
+			distance = self_collision::CollisionModel::getDistance(conv2, T_l1, conv, T_l2, d1, d2, param_d0);
 			m_id = conv2.publishMarker(vis_pub, m_id, T_l1);
 			m_id = conv.publishMarker(vis_pub, m_id, T_l2);
 			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
 		}
 
+		// check collisions between links
 		int low_distance_count = 0;
 		for (self_collision::CollisionModel::CollisionPairs::iterator it = collision_model->enabled_collisions.begin(); it != collision_model->enabled_collisions.end(); it++)
 		{
@@ -322,30 +308,107 @@ int main(int argc, char **argv)
 				// iterate through collision objects of link2
 				for (self_collision::Link::VecPtrCollision::const_iterator c_it2 = link2->collision_array.begin(); c_it2 != link2->collision_array.end(); c_it2++)
 				{
-					double distance = self_collision::CollisionModel::getDistance(*((*c_it1)->geometry.get()), T_B_L1 * (*c_it1)->origin, *((*c_it2)->geometry.get()), T_B_L2 * (*c_it2)->origin, d1, d2);
+					double distance = self_collision::CollisionModel::getDistance(*((*c_it1)->geometry.get()), T_B_L1 * (*c_it1)->origin, *((*c_it2)->geometry.get()), T_B_L2 * (*c_it2)->origin, d1, d2, param_d0);
 					double dist2 = (d1-d2).Norm();
 					if (distance-dist2 > 0.01 || distance-dist2 < -0.01)
 					{
-						ROS_ERROR("%s  %s   %d  %d  %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
+//						ROS_ERROR("%s  %s   %d  %d  %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
 					}
 					if (distance < 0.0)
 					{
 						ROS_INFO("%s  %s   %d  %d   %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
 					}
-					else if (distance < 0.15)
+					else if (distance < param_d0)
 					{
 						m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
 						low_distance_count++;
 					}
+
 				}
 			}
 		}
 
-		ROS_INFO("low distances: %d", low_distance_count);
+//		disableMallocHook();
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts3);
+//		clock_gettime(CLOCK_REALTIME, &ts2);
+
+		int time_diff21_ns = (ts2.tv_sec - ts1.tv_sec) * 1000000000 + (ts2.tv_nsec - ts1.tv_nsec);
+		double time_diff21_s = (double)time_diff21_ns / 1000000000.0;
+
+		int time_diff32_ns = (ts3.tv_sec - ts2.tv_sec) * 1000000000 + (ts3.tv_nsec - ts2.tv_nsec);
+		double time_diff32_s = (double)time_diff32_ns / 1000000000.0;
+
+
+//		ROS_INFO("low distances: %d", low_distance_count);
+		ROS_INFO("time: %lf + %lf = %lf    %d  %d", time_diff21_s, time_diff32_s, time_diff21_s + time_diff32_s, malloc_count, free_count);
+
+		//
+		// convex hull computation
+		//
+
+		for (self_collision::Link::VecPtrCollision::iterator it = convex_hull_vector.begin(); it != convex_hull_vector.end(); it++)
+		{
+			self_collision::Convex* convex = static_cast<self_collision::Convex*>((*it)->geometry.get());
+			KDL::Frame &T_B_L = transformation_map[(*it)->parent_->name];
+
+			std::vector<KDL::Vector> points;
+
+			for (self_collision::Convex::ConvexPointsVector::iterator pt_it = convex->points.begin(); pt_it != convex->points.end(); pt_it++)
+			{
+				KDL::Frame &T_B_F = transformation_map[pt_it->first];
+				KDL::Frame T_E_F = (T_B_L * (*it)->origin).Inverse() * T_B_F;
+				points.push_back(T_E_F * pt_it->second);
+			}
+			std::vector<KDL::Vector> v_out;
+			std::vector<Face> f_out;
+
+			calculateQhull(points, v_out, f_out);
+			initQhull();
+			convex->updateConvex(v_out, f_out);
+			KDL::Vector center;
+			for (std::vector<KDL::Vector>::iterator v_it = v_out.begin(); v_it != v_out.end(); v_it++)
+			{
+				center += *v_it;
+			}
+			center = 1.0/(double)v_out.size() * center;
+
+			double radius = 0.0;
+			for (std::vector<KDL::Vector>::iterator v_it = v_out.begin(); v_it != v_out.end(); v_it++)
+			{
+				double d = ((*v_it)-center).Norm();
+				if (d > radius)
+				{
+					radius = d;
+				}
+			}
+			convex->center_ = center;
+			convex->radius_ = radius;
+		}
+
+
+		//
+		// visualization
+		//
+
+		// iterate through all links
+		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+		{
+			boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
+			KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
+			// iterate through collision objects
+			for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
+			{
+				m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, T_B_L * (*c_it)->origin);
+			}
+		}
+
+
 		ros::spinOnce();
 
 		ros::Duration(0.05).sleep();
 	}
+
+	pthread_mutex_destroy(&malloc_mutex);
 
 	return 0;
 }

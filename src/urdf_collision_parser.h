@@ -43,10 +43,14 @@ public:
 
 	typedef std::vector<std::pair<std::string, KDL::Vector> > ConvexPointsVector;
 	ConvexPointsVector points;
+	KDL::Vector center_;
+	double radius_;
 	virtual void clear();
 	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf);
 private:
 };
+
+class Link;
 
 class Collision
 {
@@ -54,6 +58,7 @@ public:
 	void clear();
 	boost::shared_ptr< Geometry > geometry;
 	KDL::Frame origin;
+	boost::shared_ptr<Link> parent_;
 private:
 };
 
@@ -81,7 +86,7 @@ public:
 
 	boost::shared_ptr< const Link > getLink(const std::string &name);
 	void generateCollisionPairs();
-	static double getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out);
+	static double getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out, double d0);
 private:
 	CollisionModel();
 
