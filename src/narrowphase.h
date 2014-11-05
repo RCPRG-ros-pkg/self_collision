@@ -56,7 +56,6 @@ struct GJKSolver_indep
   {
     Vec3f guess(1, 0, 0);
     if(enable_cached_guess) guess = cached_guess;
-
     details::MinkowskiDiff shape;
     shape.shapes[0] = &s1;
     shape.shapes[1] = &s2;
@@ -252,7 +251,7 @@ struct GJKSolver_indep
   mutable Vec3f cached_guess;
 };
 
-/*
+
 template<>
 bool GJKSolver_indep::shapeDistance<Sphere, Capsule>(const Sphere& s1, const Transform3f& tf1,
                                                      const Capsule& s2, const Transform3f& tf2,
@@ -283,7 +282,7 @@ bool GJKSolver_indep::shapeTriangleDistance<Sphere>(const Sphere& s, const Trans
                                                     const Vec3f& P1, const Vec3f& P2, const Vec3f& P3, const Transform3f& tf2,
                                                     FCL_REAL* dist, Vec3f* p1, Vec3f* p2) const;
 
-*/
+
 }
 
 #endif

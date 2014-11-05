@@ -61,8 +61,55 @@ int publishLineMarker(ros::Publisher &pub, int m_id, const KDL::Vector &pos1, co
 	marker.color.g = g;
 	marker.color.b = b;
 	marker_array.markers.push_back(marker);
+
+	visualization_msgs::Marker marker2;
+	marker2.header.frame_id = "world";
+	marker2.header.stamp = ros::Time();
+	marker2.ns = "default";
+	marker2.id = m_id+1;
+	marker2.type = visualization_msgs::Marker::SPHERE;
+	marker2.action = visualization_msgs::Marker::ADD;
+	marker2.pose.position.x = pos1.x();
+	marker2.pose.position.y = pos1.y();
+	marker2.pose.position.z = pos1.z();
+	marker2.pose.orientation.x = 0.0;
+	marker2.pose.orientation.y = 0.0;
+	marker2.pose.orientation.z = 0.0;
+	marker2.pose.orientation.w = 1.0;
+	marker2.scale.x = 0.02;
+	marker2.scale.y = 0.02;
+	marker2.scale.z = 0.02;
+	marker2.color.a = 1.0;
+	marker2.color.r = 1;
+	marker2.color.g = 0;
+	marker2.color.b = 0;
+	marker_array.markers.push_back(marker2);
+
+	visualization_msgs::Marker marker3;
+	marker3.header.frame_id = "world";
+	marker3.header.stamp = ros::Time();
+	marker3.ns = "default";
+	marker3.id = m_id+2;
+	marker3.type = visualization_msgs::Marker::SPHERE;
+	marker3.action = visualization_msgs::Marker::ADD;
+	marker3.pose.position.x = pos2.x();
+	marker3.pose.position.y = pos2.y();
+	marker3.pose.position.z = pos2.z();
+	marker3.pose.orientation.x = 0.0;
+	marker3.pose.orientation.y = 0.0;
+	marker3.pose.orientation.z = 0.0;
+	marker3.pose.orientation.w = 1.0;
+	marker3.scale.x = 0.02;
+	marker3.scale.y = 0.02;
+	marker3.scale.z = 0.02;
+	marker3.color.a = 1.0;
+	marker3.color.r = 0;
+	marker3.color.g = 1;
+	marker3.color.b = 0;
+	marker_array.markers.push_back(marker3);
+
 	pub.publish( marker_array );
-	return m_id + 1;
+	return m_id + 3;
 }
 
 int publishCapsule(ros::Publisher &pub, int m_id, KDL::Frame fr, double length, double radius)
@@ -262,6 +309,23 @@ int publishMeshMarker(ros::Publisher &pub, int m_id, const KDL::Frame &tf, const
 	marker_array.markers.push_back(marker2);
 	pub.publish( marker_array );
 	return m_id + 2;
+}
+
+void clearMarkers(ros::Publisher &pub, int from, int to)
+{
+	visualization_msgs::MarkerArray marker_array;
+	for (int i=from; i<to; i++)
+	{
+		visualization_msgs::Marker marker;
+		marker.header.frame_id = "world";
+		marker.header.stamp = ros::Time();
+		marker.ns = "default";
+		marker.id = i;
+		marker.type = visualization_msgs::Marker::SPHERE;
+		marker.action = visualization_msgs::Marker::DELETE;
+		marker_array.markers.push_back(marker);
+	}
+	pub.publish( marker_array );
 }
 
 

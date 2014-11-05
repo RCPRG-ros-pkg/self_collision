@@ -4,6 +4,9 @@
 #include "ros/ros.h"
 #include <kdl/frames.hpp>
 #include <tinyxml.h>
+#include "narrowphase.h"
+#include "qhull_interface.h"
+#include "marker_publisher.h"
 
 namespace self_collision
 {
@@ -11,27 +14,37 @@ namespace self_collision
 class Geometry
 {
 public:
-	enum {CAPSULE, CONVEX};
+	enum {UNDEFINED, CAPSULE, CONVEX};
 	int type;
+	boost::shared_ptr<fcl_2::ShapeBase> shape;
+	Geometry(int type);
 	virtual void clear() = 0;
+	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf) = 0;
 private:
 };
 
 class Capsule : public Geometry
 {
 public:
+	Capsule();
 	double radius;
 	double length;
 	virtual void clear();
+	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf);
 private:
 };
 
 class Convex : public Geometry
 {
 public:
+	Convex();
+	~Convex();
+	void updateConvex(const std::vector<KDL::Vector> &v, const std::vector<Face> &f);
+
 	typedef std::vector<std::pair<std::string, KDL::Vector> > ConvexPointsVector;
 	ConvexPointsVector points;
 	virtual void clear();
+	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf);
 private:
 };
 
@@ -68,6 +81,7 @@ public:
 
 	boost::shared_ptr< const Link > getLink(const std::string &name);
 	void generateCollisionPairs();
+	static double getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out);
 private:
 	CollisionModel();
 
@@ -83,6 +97,8 @@ private:
 
 	typedef std::map<std::string, boost::shared_ptr<Link> > LinkMap;
 	LinkMap links_;
+
+	static fcl_2::GJKSolver_indep gjk_solver;
 };
 
 }	// namespace self_collision

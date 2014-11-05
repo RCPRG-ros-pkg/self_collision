@@ -7,7 +7,7 @@
 #include <iostream>
 
 #include <kdl_parser/kdl_parser.hpp>
-#include "self_collision_test/urdf_collision_parser.h"
+#include "urdf_collision_parser.h"
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/treefksolverpos_recursive.hpp>
 
@@ -15,8 +15,6 @@
 
 #include "marker_publisher.h"
 #include "qhull_interface.h"
-#include "distance_measure.h"
-
 
 typedef std::map<std::string, std::pair<int,double> > JointStatesMap;
 JointStatesMap joint_states_map;
@@ -74,11 +72,9 @@ int main(int argc, char **argv)
 	}
 */
 
-	DistanceMeasure dm;
-
 	ROS_INFO("parsing robot_description for self-collision data");
 	boost::shared_ptr<self_collision::CollisionModel> collision_model = self_collision::CollisionModel::parseURDF(robot_description_);
-
+/*
 	for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
 	{
 		boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
@@ -91,21 +87,16 @@ int main(int argc, char **argv)
 		{
 			char idx_str[20];
 			sprintf(idx_str, "_%d", collision_geom_idx);
-			//(*c_it)->origin
 			switch ((*c_it)->geometry->type)
 			{
 				case self_collision::Geometry::CAPSULE:
 					{
 						ROS_INFO("      CAPSULE");
-						self_collision::Capsule *capsule = static_cast<self_collision::Capsule*>((*c_it)->geometry.get());
-						dm.addCapsule(link->name + idx_str, capsule->radius, capsule->length);
 						break;
 					}
 				case self_collision::Geometry::CONVEX:
 					{
 						ROS_INFO("      CONVEX");
-						self_collision::Convex *convex = static_cast<self_collision::Convex*>((*c_it)->geometry.get());
-						dm.addConvex(link->name + idx_str);
 						break;
 					}
 				default:
@@ -114,7 +105,7 @@ int main(int argc, char **argv)
 			collision_geom_idx++;
 		}
 	}
-
+*/
 	// read robot semantic description
 	ROS_INFO("parsing robot_semantic_description for self-collision data");
 	std::string robot_semantic_description_;
@@ -161,14 +152,40 @@ int main(int argc, char **argv)
 
 	std::cout << "joints count: " << joints << std::endl;
 
+	// create map of transformations
+	std::map<std::string, KDL::Frame> transformation_map;
+	for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+	{
+		transformation_map[(*l_it)->name] = KDL::Frame();
+	}
+
+	clearMarkers(vis_pub, 0, 1000);
+	int m_id = 0;
+	int last_m_id = 0;
 	double angle = 0.0;
 	while (ros::ok())
 	{
-		int m_id = 0;
+		if (m_id < last_m_id)
+		{
+			clearMarkers(vis_pub, m_id, last_m_id+1);
+		}
+		last_m_id = m_id;
+		m_id = 0;
 		// rewrite joint positions from joint_states_map to q
 		for (JointStatesMap::iterator js_it = joint_states_map.begin(); js_it != joint_states_map.end(); js_it++)
 		{
 			q(js_it->second.first) = js_it->second.second;
+		}
+
+		// get current transformations
+		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+		{
+			KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
+			int result = fk_solver.JntToCart(q, T_B_L, (*l_it)->name);
+			if (result != 0)
+			{
+				ROS_ERROR("fk error for link %s   error code: %d", (*l_it)->name.c_str(), result);
+			}
 		}
 
 		//
@@ -206,48 +223,31 @@ int main(int argc, char **argv)
 		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
 		{
 			boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
-			KDL::Frame T_B_L;
-			bool transformationValid = false;
 
-			int collision_geom_idx = 0;
 			// iterate through collision objects
 			for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
 			{
 				char idx_str[20];
-				sprintf(idx_str, "_%d", collision_geom_idx);
 				switch ((*c_it)->geometry->type)
 				{
 					case self_collision::Geometry::CAPSULE:
 						{
-							if (!transformationValid)
-							{
-								int result = fk_solver.JntToCart(q, T_B_L, (*l_it)->name);
-								if (result != 0)
-									ROS_ERROR("fk_solver failed");
-								transformationValid = true;
-							}
 							self_collision::Capsule* capsule = static_cast<self_collision::Capsule*>((*c_it)->geometry.get());
-						
-							m_id = dm.publishMarker(vis_pub, m_id, link->name + idx_str, T_B_L * (*c_it)->origin);
+							KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
+							m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, T_B_L * (*c_it)->origin);
 							break;
 						}
 					case self_collision::Geometry::CONVEX:
 						{
-							if (!transformationValid)
-							{
-								int result = fk_solver.JntToCart(q, T_B_L, (*l_it)->name);
-								if (result != 0)
-									ROS_ERROR("fk_solver failed");
-								transformationValid = true;
-							}
 							self_collision::Convex* convex = static_cast<self_collision::Convex*>((*c_it)->geometry.get());
+							KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
+
 							std::vector<KDL::Vector> points;
 
 							for (self_collision::Convex::ConvexPointsVector::iterator it = convex->points.begin(); it != convex->points.end(); it++)
 							{
-								KDL::Frame T_B_F;
-								fk_solver.JntToCart(q, T_B_F, it->first);
-								KDL::Frame T_E_F = T_B_L.Inverse() * T_B_F;
+								KDL::Frame &T_B_F = transformation_map[it->first];
+								KDL::Frame T_E_F = (T_B_L * (*c_it)->origin).Inverse() * T_B_F;
 								points.push_back(T_E_F * it->second);
 							}
 							std::vector<KDL::Vector> v_out;
@@ -255,24 +255,99 @@ int main(int argc, char **argv)
 
 							calculateQhull(points, v_out, f_out);
 							initQhull();
-							dm.updateConvex(link->name + idx_str, v_out, f_out);
-							m_id = dm.publishMarker(vis_pub, m_id, link->name + idx_str, T_B_L);
+							convex->updateConvex(v_out, f_out);
+							m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, T_B_L * (*c_it)->origin);
 							break;
 						}
 					default:
 						ROS_ERROR("Unknown collision geometry type");
 				}
-				collision_geom_idx++;
 			}
 		}
 
+		if (false)
+		{
+			self_collision::Capsule caps;
+			caps.radius = 0.1;
+			caps.length = 0.1;
+			caps.shape.reset( static_cast<fcl_2::ShapeBase*>(new fcl_2::Capsule(caps.radius, caps.length)) );
+
+			self_collision::Capsule caps2;
+			caps2.radius = 0.1;
+			caps2.length = 0.1;
+			caps2.shape.reset( static_cast<fcl_2::ShapeBase*>(new fcl_2::Capsule(caps2.radius, caps2.length)) );
+
+			self_collision::Convex conv;
+			self_collision::Convex conv2;
+
+			KDL::Vector d1, d2;
+			KDL::Frame T_l1(KDL::Rotation::RotY(30.0/180.0*3.1415), KDL::Vector(0.175,0,2.2)), T_l2(KDL::Vector(-0.2,0,2.2));
+
+			double distance;
+			distance = self_collision::CollisionModel::getDistance(caps, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l1, conv, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l2, d1, d2);
+			m_id = caps.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l1);
+			m_id = conv.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,1.0,0)) * T_l2);
+			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
+
+			distance = self_collision::CollisionModel::getDistance(conv, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l1, caps, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l2, d1, d2);
+			m_id = conv.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l1);
+			m_id = caps.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.7,0)) * T_l2);
+			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
+
+			distance = self_collision::CollisionModel::getDistance(caps2, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l1, caps, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l2, d1, d2);
+			m_id = caps2.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l1);
+			m_id = caps.publishMarker(vis_pub, m_id, KDL::Frame(KDL::Vector(0,0.4,0)) * T_l2);
+			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
+
+			distance = self_collision::CollisionModel::getDistance(conv2, T_l1, conv, T_l2, d1, d2);
+			m_id = conv2.publishMarker(vis_pub, m_id, T_l1);
+			m_id = conv.publishMarker(vis_pub, m_id, T_l2);
+			m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
+		}
+
+		int low_distance_count = 0;
+		for (self_collision::CollisionModel::CollisionPairs::iterator it = collision_model->enabled_collisions.begin(); it != collision_model->enabled_collisions.end(); it++)
+		{
+			KDL::Vector d1, d2;
+			KDL::Frame T_l1, T_l2;
+			KDL::Frame &T_B_L1 = transformation_map[it->first];
+			KDL::Frame &T_B_L2 = transformation_map[it->second];
+
+			boost::shared_ptr< const self_collision::Link > link1 = collision_model->getLink(it->first);
+			boost::shared_ptr< const self_collision::Link > link2 = collision_model->getLink(it->second);
+
+			// iterate through collision objects of link1
+			for (self_collision::Link::VecPtrCollision::const_iterator c_it1 = link1->collision_array.begin(); c_it1 != link1->collision_array.end(); c_it1++)
+			{
+				// iterate through collision objects of link2
+				for (self_collision::Link::VecPtrCollision::const_iterator c_it2 = link2->collision_array.begin(); c_it2 != link2->collision_array.end(); c_it2++)
+				{
+					double distance = self_collision::CollisionModel::getDistance(*((*c_it1)->geometry.get()), T_B_L1 * (*c_it1)->origin, *((*c_it2)->geometry.get()), T_B_L2 * (*c_it2)->origin, d1, d2);
+					double dist2 = (d1-d2).Norm();
+					if (distance-dist2 > 0.01 || distance-dist2 < -0.01)
+					{
+						ROS_ERROR("%s  %s   %d  %d  %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
+					}
+					if (distance < 0.0)
+					{
+						ROS_INFO("%s  %s   %d  %d   %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
+					}
+					else if (distance < 0.15)
+					{
+						m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
+						low_distance_count++;
+					}
+				}
+			}
+		}
+
+		ROS_INFO("low distances: %d", low_distance_count);
 		ros::spinOnce();
 
 		ros::Duration(0.05).sleep();
 	}
 
-
-  return 0;
+	return 0;
 }
 
 

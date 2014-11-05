@@ -276,8 +276,6 @@ public:
          int num_points_,
          int* polygons_) : ShapeBase()
   {
-    plane_normals = plane_normals_;
-    plane_dis = plane_dis_;
     num_planes = num_planes_;
 // bug fix
     num_points = num_points_;
@@ -299,8 +297,6 @@ public:
   /// @brief Copy constructor 
   Convex(const Convex& other) : ShapeBase(other)
   {
-    plane_normals = other.plane_normals;
-    plane_dis = other.plane_dis;
     num_planes = other.num_planes;
     points = other.points;
     polygons = other.polygons;
@@ -316,10 +312,6 @@ public:
 
   /// @brief Get node type: a conex polytope 
   NODE_TYPE getNodeType() const { return GEOM_CONVEX; }
-
-  
-  Vec3f* plane_normals;
-  FCL_REAL* plane_dis;
 
   /// @brief An array of indices to the points of each polygon, it should be the number of vertices
   /// followed by that amount of indices to "points" in counter clockwise order

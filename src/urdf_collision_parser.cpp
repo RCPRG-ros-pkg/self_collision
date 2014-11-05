@@ -1,5 +1,5 @@
 #include "ros/ros.h"
-#include "self_collision_test/urdf_collision_parser.h"
+#include "urdf_collision_parser.h"
 #include "urdf/model.h"
 #include <kdl/frames.hpp>
 #include <tinyxml.h>
@@ -7,15 +7,94 @@
 namespace self_collision
 {
 
+fcl_2::GJKSolver_indep CollisionModel::gjk_solver;
+
+Geometry::Geometry(int type) :
+	type(type)
+{
+}
+
+Capsule::Capsule() :
+	Geometry(CAPSULE)
+{
+}
+
 void Capsule::clear()
 {
 	radius = 0.0;
 	length = 0.0;
 }
 
+int Capsule::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
+{
+	const fcl_2::Capsule* ob = static_cast<const fcl_2::Capsule*>(shape.get());
+	m_id = publishCapsule(pub, m_id, tf, ob->lz, ob->radius);
+}
+
+Convex::Convex() :
+	Geometry(CONVEX)
+{
+	// allocate a lot of memory and initialize very simple convex hull mesh (4 points and 4 polygons)
+	int num_points = 4;
+	fcl_2::Vec3f* points = new fcl_2::Vec3f[5000];
+	int num_planes = 4;
+	int *polygons = new int[20000];
+	points[0] = fcl_2::Vec3f(0.0, 0.0, 0.0);
+	points[1] = fcl_2::Vec3f(0.1, 0.0, 0.0);
+	points[2] = fcl_2::Vec3f(0.0, 0.1, 0.0);
+	points[3] = fcl_2::Vec3f(0.0, 0.0, 0.1);
+	polygons[0] = 3;	polygons[1] = 2;	polygons[2] = 1;	polygons[3] = 0;
+	polygons[4] = 3;	polygons[5] = 3;	polygons[6] = 1;	polygons[7] = 0;
+	polygons[8] = 3;	polygons[9] = 3;	polygons[10] = 2;	polygons[11] = 0;
+	polygons[12] = 3;	polygons[13] = 3;	polygons[14] = 2;	polygons[15] = 1;
+	shape.reset( static_cast<fcl_2::ShapeBase*>(new fcl_2::Convex(NULL, NULL, num_planes, points, num_points, polygons)) );
+}
+
+Convex::~Convex()
+{
+	fcl_2::Convex *conv = static_cast<fcl_2::Convex*>(shape.get());
+	delete[] conv->polygons;
+	conv->polygons = NULL;
+	delete[] conv->points;
+	conv->points = NULL;
+}
+
+void Convex::updateConvex(const std::vector<KDL::Vector> &v, const std::vector<Face> &f)
+{
+	fcl_2::Convex *conv = static_cast<fcl_2::Convex*>(shape.get());
+//	fcl_2::Convex* ob = static_cast<fcl_2::Convex*>(it->second.second);
+	int poly_counter = 0;
+	for (std::vector<Face>::const_iterator it = f.begin(); it != f.end(); it++)
+	{
+		conv->polygons[poly_counter++] = it->count;
+		for (int i=0; i<it->count; i++)
+		{
+			conv->polygons[poly_counter++] = it->i[i];
+		}
+	}
+
+	conv->num_planes = f.size();
+
+	int points_counter = 0;
+	for (std::vector<KDL::Vector>::const_iterator it = v.begin(); it != v.end(); it++)
+	{
+		conv->points[points_counter++] = fcl_2::Vec3f(it->x(), it->y(), it->z());
+	}
+
+	conv->num_points = v.size();
+	conv->fillEdges();
+}
+
 void Convex::clear()
 {
 	points.clear();
+}
+
+int Convex::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
+{
+	const fcl_2::Convex* ob = static_cast<const fcl_2::Convex*>(shape.get());
+	m_id = publishMeshMarker(pub, m_id, tf, ob->points, ob->num_planes, ob->polygons, 0, 0, 1);
+	return m_id;
 }
 
 void Collision::clear()
@@ -206,28 +285,32 @@ boost::shared_ptr<Geometry> CollisionModel::parseGeometry(TiXmlElement *g)
 {
 	boost::shared_ptr<Geometry> geom;
 	if (!g) return geom;
-	TiXmlElement *shape = g->FirstChildElement();
-	if (!shape)
+	TiXmlElement *shape_xml = g->FirstChildElement();
+	if (!shape_xml)
 	{
 		ROS_ERROR("Geometry tag contains no child element.");
 		return geom;
 	}
-	std::string type_name = shape->ValueStr();
+	std::string type_name = shape_xml->ValueStr();
 	if (type_name == "capsule")
 	{
 		Capsule *s = new Capsule();
 		geom.reset(s);
-		if (parseCapsule(*s, shape))
+		if (parseCapsule(*s, shape_xml))
+		{
+			s->shape.reset( static_cast<fcl_2::ShapeBase*>(new fcl_2::Capsule(s->radius, s->length)) );
 			return geom;
+		}
 	}
 	else if (type_name == "convex")
 	{
 		Convex *s = new Convex();
 		geom.reset(s);
-		if (parseConvex(*s, shape))
+		if (parseConvex(*s, shape_xml))
+		{
 			return geom;
+		}
 	}
-	// TODO: add convex_hull type
 	else
 	{
 		ROS_ERROR("Unknown geometry type '%s'", type_name.c_str());
@@ -467,6 +550,113 @@ void CollisionModel::generateCollisionPairs()
 				}
 			}
 		}
+	}
+}
+
+double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out)
+{
+	if (geom1.type == Geometry::CAPSULE && geom2.type == Geometry::CAPSULE)
+	{
+//		ROS_INFO("DistanceMeasure::getDistance: CAPSULE,CAPSULE");
+		const fcl_2::Capsule* ob1 = static_cast<const fcl_2::Capsule*>(geom1.shape.get());
+		const fcl_2::Capsule* ob2 = static_cast<const fcl_2::Capsule*>(geom2.shape.get());
+
+		// capsules are shifted by length/2
+		double x1,y1,z1,w1, x2, y2, z2, w2;
+		KDL::Frame tf1_corrected = tf1 * KDL::Frame(KDL::Vector(0,0,-ob1->lz/2.0));
+		tf1_corrected.M.GetQuaternion(x1,y1,z1,w1);
+		KDL::Frame tf2_corrected = tf2 * KDL::Frame(KDL::Vector(0,0,-ob2->lz/2.0));
+		tf2_corrected.M.GetQuaternion(x2,y2,z2,w2);
+
+		// output variables
+		fcl_2::FCL_REAL distance;
+		fcl_2::Vec3f p1;
+		fcl_2::Vec3f p2;
+		gjk_solver.shapeDistance(
+			*ob1, fcl_2::Transform3f(fcl_2::Quaternion3f(w1,x1,y1,z1), fcl_2::Vec3f(tf1_corrected.p.x(),tf1_corrected.p.y(),tf1_corrected.p.z())),
+			*ob2, fcl_2::Transform3f(fcl_2::Quaternion3f(w2,x2,y2,z2), fcl_2::Vec3f(tf2_corrected.p.x(),tf2_corrected.p.y(),tf2_corrected.p.z())),
+			 &distance, &p1, &p2);
+		// the output for two capsules is in global coordinates
+		d1_out = KDL::Vector(p1[0], p1[1], p1[2]);
+		d2_out = KDL::Vector(p2[0], p2[1], p2[2]);
+		return distance;
+	}
+	else if (geom1.type == Geometry::CAPSULE && geom2.type == Geometry::CONVEX)
+	{
+//		ROS_INFO("DistanceMeasure::getDistance: CAPSULE,CONVEX");
+		const fcl_2::Capsule* ob1 = static_cast<const fcl_2::Capsule*>(geom1.shape.get());
+		const fcl_2::Convex* ob2 = static_cast<const fcl_2::Convex*>(geom2.shape.get());
+
+		// capsules are shifted by length/2
+		double x1,y1,z1,w1, x2, y2, z2, w2;
+		KDL::Frame tf1_corrected = tf1;// * KDL::Frame(KDL::Vector(0,0,-ob1->lz/2.0));
+		tf1_corrected.M.GetQuaternion(x1,y1,z1,w1);
+		tf2.M.GetQuaternion(x2,y2,z2,w2);
+
+		// output variables
+		fcl_2::FCL_REAL distance;
+		fcl_2::Vec3f p1;
+		fcl_2::Vec3f p2;
+		gjk_solver.shapeDistance(
+			*ob1, fcl_2::Transform3f(fcl_2::Quaternion3f(w1,x1,y1,z1), fcl_2::Vec3f(tf1_corrected.p.x(),tf1_corrected.p.y(),tf1_corrected.p.z())),
+			*ob2, fcl_2::Transform3f(fcl_2::Quaternion3f(w2,x2,y2,z2), fcl_2::Vec3f(tf2.p.x(),tf2.p.y(),tf2.p.z())),
+			 &distance, &p1, &p2);
+		// the output for two capsules is in wtf coordinates
+		d1_out = tf1_corrected*KDL::Vector(p1[0], p1[1], p1[2]);
+		d2_out = tf1_corrected*((tf1_corrected.Inverse()*tf2).Inverse()*KDL::Vector(p2[0], p2[1], p2[2]));
+		return distance;
+	}
+	else if (geom1.type == Geometry::CONVEX && geom2.type == Geometry::CAPSULE)
+	{
+//		ROS_INFO("DistanceMeasure::getDistance: CONVEX, CAPSULE");
+		const fcl_2::Convex* ob1 = static_cast<const fcl_2::Convex*>(geom1.shape.get());
+		const fcl_2::Capsule* ob2 = static_cast<const fcl_2::Capsule*>(geom2.shape.get());
+
+		// capsules are shifted by length/2
+		double x1,y1,z1,w1, x2, y2, z2, w2;
+		tf1.M.GetQuaternion(x1,y1,z1,w1);
+		KDL::Frame tf2_corrected = tf2;// * KDL::Frame(KDL::Vector(0,0,-ob2->lz/2.0));
+		tf2_corrected.M.GetQuaternion(x2,y2,z2,w2);
+
+		// output variables
+		fcl_2::FCL_REAL distance;
+		fcl_2::Vec3f p1;
+		fcl_2::Vec3f p2;
+		gjk_solver.shapeDistance(
+			*ob1, fcl_2::Transform3f(fcl_2::Quaternion3f(w1,x1,y1,z1), fcl_2::Vec3f(tf1.p.x(),tf1.p.y(),tf1.p.z())),
+			*ob2, fcl_2::Transform3f(fcl_2::Quaternion3f(w2,x2,y2,z2), fcl_2::Vec3f(tf2_corrected.p.x(),tf2_corrected.p.y(),tf2_corrected.p.z())),
+			 &distance, &p1, &p2);
+		// the output for two capsules is in wtf coordinates
+		d1_out = tf1*KDL::Vector(p1[0], p1[1], p1[2]);
+		d2_out = tf1*((tf1.Inverse()*tf2_corrected).Inverse()*KDL::Vector(p2[0], p2[1], p2[2]));
+		return distance;
+	}
+	else if (geom1.type == Geometry::CONVEX && geom2.type == Geometry::CONVEX)
+	{
+//		ROS_INFO("DistanceMeasure::getDistance: CONVEX,CONVEX");
+		const fcl_2::Convex* ob1 = static_cast<const fcl_2::Convex*>(geom1.shape.get());
+		const fcl_2::Convex* ob2 = static_cast<const fcl_2::Convex*>(geom2.shape.get());
+
+		double x1,y1,z1,w1, x2, y2, z2, w2;
+		tf1.M.GetQuaternion(x1,y1,z1,w1);
+		tf2.M.GetQuaternion(x2,y2,z2,w2);
+
+		// output variables
+		fcl_2::FCL_REAL distance;
+		fcl_2::Vec3f p1;
+		fcl_2::Vec3f p2;
+		gjk_solver.shapeDistance(
+			*ob1, fcl_2::Transform3f(fcl_2::Quaternion3f(w1,x1,y1,z1), fcl_2::Vec3f(tf1.p.x(),tf1.p.y(),tf1.p.z())),
+			*ob2, fcl_2::Transform3f(fcl_2::Quaternion3f(w2,x2,y2,z2), fcl_2::Vec3f(tf2.p.x(),tf2.p.y(),tf2.p.z())),
+			 &distance, &p1, &p2);
+		// the output for two capsules is in wtf coordinates
+		d1_out = tf1*KDL::Vector(p1[0], p1[1], p1[2]);
+		d2_out = tf1*((tf1.Inverse()*tf2).Inverse()*KDL::Vector(p2[0], p2[1], p2[2]));
+		return distance;
+	}
+	else
+	{
+		ROS_ERROR("not supported distance measure");
 	}
 }
 
