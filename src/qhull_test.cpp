@@ -129,11 +129,6 @@ int main(int argc, char **argv)
 	urdf::Model robot_model_;
 	robot_model_.initString(robot_description_);
 
-	// save robot links
-	typedef std::vector< boost::shared_ptr< urdf::Link > > VecPtrLink;
-	std::vector< boost::shared_ptr< urdf::Link > > links_;
-	robot_model_.getLinks(links_);
-
 	ROS_INFO("parsing robot_description for self-collision data");
 	boost::shared_ptr<self_collision::CollisionModel> collision_model = self_collision::CollisionModel::parseURDF(robot_description_);
 
@@ -183,20 +178,15 @@ int main(int argc, char **argv)
 	std::cout << "joints count: " << joints << std::endl;
 
 	// create map of transformations
-	std::map<std::string, KDL::Frame> transformation_map;
-	for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
-	{
-		transformation_map[(*l_it)->name] = KDL::Frame();
-	}
+	KDL::Frame *transformation_map = new KDL::Frame[collision_model->link_count_];
 
 	// create vector of convex hulls for quick update
 	self_collision::Link::VecPtrCollision convex_hull_vector;
 	// iterate through all links
-	for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+	for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
 	{
-		boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
 		// iterate through collision objects
-		for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
+		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model->links_[l_i]->collision_array.begin(); c_it != collision_model->links_[l_i]->collision_array.end(); c_it++)
 		{
 			if ((*c_it)->geometry->type == self_collision::Geometry::CONVEX)
 			{
@@ -237,13 +227,13 @@ int main(int argc, char **argv)
 		}
 
 		// get current transformations
-		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+		for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
 		{
-			KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
-			int result = fk_solver.JntToCart(q, T_B_L, (*l_it)->name);
+			KDL::Frame &T_B_L = transformation_map[l_i];
+			int result = fk_solver.JntToCart(q, T_B_L, collision_model->links_[l_i]->name);
 			if (result != 0)
 			{
-				ROS_ERROR("fk error for link %s   error code: %d", (*l_it)->name.c_str(), result);
+				ROS_ERROR("fk error");
 			}
 		}
 
@@ -316,11 +306,11 @@ int main(int argc, char **argv)
 					}
 					if (distance < 0.0)
 					{
-						ROS_INFO("%s  %s   %d  %d   %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
+						ROS_INFO("%d  %d   %d  %d   %lf", it->first, it->second, (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
 					}
 					else if (distance < param_d0)
 					{
-						m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
+//						m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
 						low_distance_count++;
 					}
 
@@ -349,11 +339,11 @@ int main(int argc, char **argv)
 		for (self_collision::Link::VecPtrCollision::iterator it = convex_hull_vector.begin(); it != convex_hull_vector.end(); it++)
 		{
 			self_collision::Convex* convex = static_cast<self_collision::Convex*>((*it)->geometry.get());
-			KDL::Frame &T_B_L = transformation_map[(*it)->parent_->name];
+			KDL::Frame &T_B_L = transformation_map[(*it)->parent_->id_];
 
 			std::vector<KDL::Vector> points;
 
-			for (self_collision::Convex::ConvexPointsVector::iterator pt_it = convex->points.begin(); pt_it != convex->points.end(); pt_it++)
+			for (self_collision::Convex::ConvexPointsIdVector::iterator pt_it = convex->points_id_.begin(); pt_it != convex->points_id_.end(); pt_it++)
 			{
 				KDL::Frame &T_B_F = transformation_map[pt_it->first];
 				KDL::Frame T_E_F = (T_B_L * (*it)->origin).Inverse() * T_B_F;
@@ -385,20 +375,17 @@ int main(int argc, char **argv)
 			convex->radius_ = radius;
 		}
 
-
 		//
 		// visualization
 		//
 
 		// iterate through all links
-		for (VecPtrLink::iterator l_it = links_.begin(); l_it != links_.end(); l_it++)
+		for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
 		{
-			boost::shared_ptr< const self_collision::Link > link = collision_model->getLink((*l_it)->name);
-			KDL::Frame &T_B_L = transformation_map[(*l_it)->name];
 			// iterate through collision objects
-			for (self_collision::Link::VecPtrCollision::const_iterator c_it = link->collision_array.begin(); c_it != link->collision_array.end(); c_it++)
+			for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model->links_[l_i]->collision_array.begin(); c_it != collision_model->links_[l_i]->collision_array.end(); c_it++)
 			{
-				m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, T_B_L * (*c_it)->origin);
+				m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, transformation_map[l_i] * (*c_it)->origin);
 			}
 		}
 

@@ -41,8 +41,10 @@ public:
 	~Convex();
 	void updateConvex(const std::vector<KDL::Vector> &v, const std::vector<Face> &f);
 
-	typedef std::vector<std::pair<std::string, KDL::Vector> > ConvexPointsVector;
-	ConvexPointsVector points;
+	typedef std::vector<std::pair<std::string, KDL::Vector> > ConvexPointsStrVector;
+	typedef std::vector<std::pair<int, KDL::Vector> > ConvexPointsIdVector;
+	ConvexPointsStrVector points_str_;
+	ConvexPointsIdVector points_id_;
 	KDL::Vector center_;
 	double radius_;
 	virtual void clear();
@@ -67,6 +69,7 @@ class Link
 public:
 	void clear();
 	std::string name;
+	int id_;
 	typedef std::vector< boost::shared_ptr< Collision > > VecPtrCollision;
 	VecPtrCollision collision_array;
 private:
@@ -80,13 +83,18 @@ public:
 
 	std::string name_;
 
-	typedef std::vector<std::pair<std::string, std::string> > CollisionPairs;
+	typedef std::vector<std::pair<int, int> > CollisionPairs;
 	CollisionPairs disabled_collisions;
 	CollisionPairs enabled_collisions;
 
-	boost::shared_ptr< const Link > getLink(const std::string &name);
+	boost::shared_ptr< const Link > getLink(int id);
+	int getLinkId(const std::string &name);
 	void generateCollisionPairs();
 	static double getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out, double d0);
+
+	boost::shared_ptr<Link> *links_;
+	int link_count_;
+
 private:
 	CollisionModel();
 
@@ -99,9 +107,6 @@ private:
 	static boost::shared_ptr<Geometry> parseGeometry(TiXmlElement *g);
 	static bool parseCollision(Collision &col, TiXmlElement* config);
 	static bool parseLink(Link &link, TiXmlElement* config);
-
-	typedef std::map<std::string, boost::shared_ptr<Link> > LinkMap;
-	LinkMap links_;
 
 	static fcl_2::GJKSolver_indep gjk_solver;
 };

@@ -62,7 +62,6 @@ Convex::~Convex()
 void Convex::updateConvex(const std::vector<KDL::Vector> &v, const std::vector<Face> &f)
 {
 	fcl_2::Convex *conv = static_cast<fcl_2::Convex*>(shape.get());
-//	fcl_2::Convex* ob = static_cast<fcl_2::Convex*>(it->second.second);
 	int poly_counter = 0;
 	for (std::vector<Face>::const_iterator it = f.begin(); it != f.end(); it++)
 	{
@@ -87,7 +86,8 @@ void Convex::updateConvex(const std::vector<KDL::Vector> &v, const std::vector<F
 
 void Convex::clear()
 {
-	points.clear();
+	points_str_.clear();
+	points_id_.clear();
 }
 
 int Convex::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
@@ -107,16 +107,27 @@ void Link::clear()
 	// TODO
 }
 
-boost::shared_ptr< const Link > CollisionModel::getLink(const std::string &name)
+boost::shared_ptr< const Link > CollisionModel::getLink(int id)
 {
-	LinkMap::const_iterator l_it = links_.find(name);
-	if (l_it != links_.end())
+	if (id < 0 || id >= link_count_)
 	{
-		return l_it->second;
+		ROS_ERROR("CollisionModel::getLink: id out of range: 0 <= %d < %d", id, link_count_);
+		return boost::shared_ptr< const Link >();
 	}
-	return boost::shared_ptr< const Link >();
+	return links_[id];
 }
 
+int CollisionModel::getLinkId(const std::string &name)
+{
+	for (int l_i = 0; l_i < link_count_; l_i++)
+	{
+		if (links_[l_i]->name == name)
+		{
+			return l_i;
+		}
+	}
+	return -1;
+}
 
 KDL::Vector initVectorFromString(const std::string &vector_str)
 {
@@ -145,6 +156,12 @@ KDL::Vector initVectorFromString(const std::string &vector_str)
 	}
 	return KDL::Vector(xyz[0], xyz[1], xyz[2]);
 };
+
+CollisionModel::CollisionModel() :
+	links_(NULL),
+	link_count_(0)
+{
+}
 
 bool CollisionModel::parsePose(KDL::Frame &pose, TiXmlElement* xml)
 {
@@ -269,7 +286,8 @@ bool CollisionModel::parseConvex(Convex &s, TiXmlElement *c)
 		KDL::Vector point;
 		if (parsePoint(frame, point, col_xml))
 		{
-			s.points.push_back(std::make_pair<std::string, KDL::Vector>(frame, point));
+			
+			s.points_str_.push_back(std::make_pair<std::string, KDL::Vector>(frame, point));
 		}
 		else
 		{
@@ -334,8 +352,6 @@ bool CollisionModel::parseCollision(Collision &col, TiXmlElement* config)
 	if (!col.geometry)
 		return false;
 	const char *name_char = config->Attribute("name");
-//	if (name_char)
-//		col.name = name_char;
 	return true;
 }
 
@@ -366,10 +382,6 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 			return false;
 		}
 	}
-}
-
-CollisionModel::CollisionModel()
-{
 }
 
 bool CollisionModel::parseDisableCollision(std::string &link1, std::string &link2, TiXmlElement *c)
@@ -426,18 +438,19 @@ void CollisionModel::parseSRDF(const std::string &xml_string)
 		std::string link1, link2;
 		try {
 			parseDisableCollision(link1, link2, disable_collision_xml);
-
-			if (links_.find(link1) == links_.end())
+			int link1_id = getLinkId(link1);
+			int link2_id = getLinkId(link2);
+			if (link1_id == -1)
 			{
 				ROS_ERROR("link '%s' does not exist.", link1.c_str());
 				return;
 			}
-			if (links_.find(link2) == links_.end())
+			if (link2_id == -1)
 			{
 				ROS_ERROR("link '%s' does not exist.", link2.c_str());
 				return;
 			}
-			disabled_collisions.push_back(std::make_pair<std::string, std::string>(link1, link2));
+			disabled_collisions.push_back(std::make_pair<int, int>(link1_id, link2_id));
 		}
 		catch (urdf::ParseError &e) {
 			ROS_ERROR("disable_collisions xml is not initialized correctly");
@@ -476,25 +489,36 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 		return model;
 	}
 	model->name_ = std::string(name);
-	// Get all Link elements
+
+	int link_count = 0;
+	// count links
 	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"))
 	{
-		boost::shared_ptr<Link> link;
-		link.reset(new Link);
+		link_count++;
+	}
+
+	if (link_count == 0){
+		ROS_ERROR("No link elements found in urdf file");
+		model.reset();
+		return model;
+	}
+
+	if (model->links_ != NULL)
+	{
+		delete[] model->links_;
+		model->links_ = NULL;
+	}
+	model->links_ = new boost::shared_ptr<Link>[link_count];
+	model->link_count_ = link_count;
+
+	int link_id=0;
+	// Get all Link elements
+	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"), link_id++)
+	{
+		model->links_[link_id].reset(new Link);
+		model->links_[link_id]->id_ = link_id;
 		try {
-			parseLink(*link, link_xml);
-			if (model->getLink(link->name))
-			{
-				ROS_ERROR("link '%s' is not unique.", link->name.c_str());
-				model.reset();
-				return model;
-			}
-			else
-			{
-				// set link visual material
-				model->links_.insert(make_pair(link->name,link));
-				ROS_INFO("urdfdom: successfully added a new link '%s'", link->name.c_str());
-			}
+			parseLink(*(model->links_[link_id]), link_xml);
 		}
 		catch (urdf::ParseError &e) {
 			ROS_ERROR("link xml is not initialized correctly");
@@ -502,40 +526,58 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 			return model;
 		}
 	}
-	if (model->links_.empty()){
-		ROS_ERROR("No link elements found in urdf file");
-		model.reset();
-		return model;
+
+	for (int l_i = 0; l_i < model->link_count_; l_i++)
+	{
+		for (Link::VecPtrCollision::iterator c_it = model->links_[l_i]->collision_array.begin(); c_it != model->links_[l_i]->collision_array.end(); c_it++)
+		{
+			if ((*c_it)->geometry->type == Geometry::CONVEX)
+			{
+				Convex *conv = static_cast<Convex*>( (*c_it)->geometry.get() );
+				conv->points_id_.clear();
+				for (Convex::ConvexPointsStrVector::iterator p_it = conv->points_str_.begin(); p_it != conv->points_str_.end(); p_it++)
+				{
+					int id = model->getLinkId(p_it->first);
+					if (id == -1)
+					{
+						ROS_ERROR("parseURDF: could not find link %s", p_it->first.c_str());
+						break;
+					}
+					conv->points_id_.push_back( std::make_pair<int, KDL::Vector>(id, p_it->second) );
+				}
+			}
+		}
 	}
+
 	return model;
 }
 
 void CollisionModel::generateCollisionPairs()
 {
 	enabled_collisions.clear();
-	ROS_INFO("%ld", links_.size());
+//	ROS_INFO("%ld", links_.size());
 
-	for (LinkMap::iterator it1 = links_.begin(); it1 != links_.end(); it1++)
+	for (int l_i = 0; l_i < link_count_; l_i++)
 	{
-		if (it1->second->collision_array.size() == 0)
+		if (links_[l_i]->collision_array.size() == 0)
 		{
 			continue;
 		}
-		for (LinkMap::iterator it2 = links_.begin(); it2 != links_.end(); it2++)
+		for (int l_j = 0; l_j < link_count_; l_j++)
 		{
-			if (it2->second->collision_array.size() == 0)
+			if (links_[l_j]->collision_array.size() == 0)
 			{
 				continue;
 			}
-			if (it1->first == it2->first)
+			if (l_i == l_j)
 			{
 				continue;
 			}
 			bool add = true;
 			for (CollisionPairs::iterator dc_it = disabled_collisions.begin(); dc_it != disabled_collisions.end(); dc_it++)
 			{
-				if (	(dc_it->first == it1->first && dc_it->second == it2->first) ||
-					(dc_it->second == it1->first && dc_it->first == it2->first) )
+				if (	(dc_it->first == l_i && dc_it->second == l_j) ||
+					(dc_it->second == l_i && dc_it->first == l_j) )
 				{
 					add = false;
 					break;
@@ -545,8 +587,8 @@ void CollisionModel::generateCollisionPairs()
 			{
 				for (CollisionPairs::iterator ec_it = enabled_collisions.begin(); ec_it != enabled_collisions.end(); ec_it++)
 				{
-					if (	(ec_it->first == it1->first && ec_it->second == it2->first) ||
-						(ec_it->second == it1->first && ec_it->first == it2->first) )
+					if (	(ec_it->first == l_i && ec_it->second == l_j) ||
+						(ec_it->second == l_i && ec_it->first == l_j) )
 					{
 						add = false;
 						break;
@@ -555,7 +597,7 @@ void CollisionModel::generateCollisionPairs()
 
 				if (add)
 				{
-					enabled_collisions.push_back(std::make_pair<std::string, std::string>(it1->first, it2->first));
+					enabled_collisions.push_back(std::make_pair<int, int>(l_i, l_j));
 				}
 			}
 		}
