@@ -122,6 +122,19 @@ public:
 	KDL::Vector xj_;
 };
 
+timespec diff(timespec start, timespec end)
+{
+	timespec temp;
+	if ((end.tv_nsec-start.tv_nsec)<0) {
+		temp.tv_sec = end.tv_sec-start.tv_sec-1;
+		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	} else {
+		temp.tv_sec = end.tv_sec-start.tv_sec;
+		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+	return temp;
+}
+
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "qhull_test");
@@ -216,7 +229,73 @@ int main(int argc, char **argv)
 	int distances_count = 0;
 	Distance *distances = new Distance[distances_max_count];
 
+	for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
+	{
+		collision_model->links_[l_i]->kdl_segment_ = &(robot_tree.getSegment(collision_model->links_[l_i]->name)->second);
+	}
+
+	// create vector of proper fk calculation link sequence
+	int *fk_seq = new int[collision_model->link_count_];
+	// update parent link information
+	for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
+	{
+//		ROS_INFO("looking for parent for: %s", collision_model->links_[l_i]->name.c_str());
+		urdf::Link *parent_link = robot_model_.getLink( collision_model->links_[l_i]->name )->getParent().get();
+		if (parent_link != NULL)
+		{
+			collision_model->links_[l_i]->parent_id_ = collision_model->getLinkId( parent_link->name );
+		}
+		else
+		{
+			collision_model->links_[l_i]->parent_id_ = -1;
+			fk_seq[0] = l_i;
+		}
+	}
+	int fk_seq_i = 1;
+
+	while (true)
+	{
+		bool added = false;
+		int fk_seq_i_saved = fk_seq_i;
+		for (int i=0; i<fk_seq_i_saved; i++)
+		{
+			for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
+			{
+				// found child of already added link
+				if (collision_model->links_[l_i]->parent_id_ == fk_seq[i])
+				{
+					// chack if the child was added
+					bool child_already_added = false;
+					for (int j=0; j<fk_seq_i; j++)
+					{
+						if (fk_seq[j] == l_i)
+						{
+							child_already_added = true;
+							break;
+						}
+					}
+					// add child
+					if (!child_already_added)
+					{
+						added = true;
+						fk_seq[fk_seq_i] = l_i;
+						fk_seq_i++;
+					}
+				}
+			}
+		}
+		if (!added)
+		{
+			break;
+		}
+	}
+
 	pthread_mutex_init(&malloc_mutex, NULL);
+
+	double mean21_time = 0.0;
+	int count_21 = 0;
+	double mean32_time = 0.0;
+	int count_32 = 0;
 
 	const double param_d0 = 0.15;
 	clearMarkers(vis_pub, 0, 1000);
@@ -235,11 +314,12 @@ int main(int argc, char **argv)
 
 		// start time measurement
 		timespec ts1, ts2, ts3;
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts1);
-//		clock_gettime(CLOCK_REALTIME, &ts1);
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts1);
 
 		// enable malloc hook
 //		enableMallocHook();
+
+		int malloc_count_0 = malloc_count;
 
 		// rewrite joint positions from joint_states_map to q
 		for (JointStatesMap::iterator js_it = joint_states_map.begin(); js_it != joint_states_map.end(); js_it++)
@@ -247,18 +327,26 @@ int main(int argc, char **argv)
 			q(js_it->second.first) = js_it->second.second;
 		}
 
-		// get current transformations
-		for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
+		int malloc_count_1 = malloc_count;
+		for (int fk_i = 0; fk_i < collision_model->link_count_; fk_i++)
 		{
-			KDL::Frame &T_B_L = transformation_map[l_i];
-			int result = fk_solver.JntToCart(q, T_B_L, collision_model->links_[l_i]->name);
-			if (result != 0)
+			int l_i = fk_seq[fk_i];
+			int parent_i = collision_model->links_[l_i]->parent_id_;
+			double q_i = q(collision_model->links_[l_i]->kdl_segment_->q_nr);
+			if (parent_i == -1)
 			{
-				ROS_ERROR("fk error");
+				transformation_map[l_i] = collision_model->links_[l_i]->kdl_segment_->segment.pose(q_i);
 			}
+			else
+			{
+				transformation_map[l_i] = transformation_map[parent_i] * collision_model->links_[l_i]->kdl_segment_->segment.pose(q_i);
+			}
+			
 		}
 
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts2);
+		int malloc_count_2 = malloc_count;
+
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts2);
 
 		// tests
 		if (false)
@@ -349,17 +437,30 @@ int main(int argc, char **argv)
 			}
 		}
 
+		int malloc_count_3 = malloc_count;
+
 //		disableMallocHook();
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts3);
-//		clock_gettime(CLOCK_REALTIME, &ts2);
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts3);
 
-		int time_diff21_ns = (ts2.tv_sec - ts1.tv_sec) * 1000000000 + (ts2.tv_nsec - ts1.tv_nsec);
-		double time_diff21_s = (double)time_diff21_ns / 1000000000.0;
+		timespec time_diff21 = diff(ts1, ts2);
+		timespec time_diff32 = diff(ts2, ts3);
+		double time_diff21_s = (double)time_diff21.tv_sec + (double)time_diff21.tv_nsec/1000000000.0;
+		double time_diff32_s = (double)time_diff32.tv_sec + (double)time_diff32.tv_nsec/1000000000.0;
 
-		int time_diff32_ns = (ts3.tv_sec - ts2.tv_sec) * 1000000000 + (ts3.tv_nsec - ts2.tv_nsec);
-		double time_diff32_s = (double)time_diff32_ns / 1000000000.0;
+//		ROS_INFO("time: %lf + %lf = %lf  distances: %d   %d  %d", time_diff21_s, time_diff32_s, time_diff21_s + time_diff32_s, distances_count, malloc_count, free_count);
 
-		ROS_INFO("time: %lf + %lf = %lf  distances: %d   %d  %d", time_diff21_s, time_diff32_s, time_diff21_s + time_diff32_s, distances_count, malloc_count, free_count);
+		mean21_time += time_diff21_s;
+		count_21++;
+		mean32_time += time_diff32_s;
+		count_32++;
+		if (count_21 == 20)
+		{
+			ROS_INFO("time: %lf + %lf = %lf  distances: %d   %d %d %d %d", mean21_time/(double)count_21, mean32_time/(double)count_32, (mean21_time+mean32_time)/(double)count_21, distances_count, malloc_count_0, malloc_count_1, malloc_count_2, malloc_count_3);
+			mean21_time = 0.0;
+			count_21 = 0;
+			mean32_time = 0.0;
+			count_32 = 0;
+		}
 
 		//
 		// convex hull computation
@@ -425,7 +526,6 @@ int main(int argc, char **argv)
 			KDL::Frame &T_B_L1 = transformation_map[distances[l_d].i_];
 			m_id = publishLineMarker(vis_pub, m_id, T_B_L1 * distances[l_d].xi_, T_B_L1 * distances[l_d].xj_, 1, 0, 0);
 		}
-
 
 		ros::spinOnce();
 

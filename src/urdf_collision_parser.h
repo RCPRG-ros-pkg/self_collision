@@ -3,6 +3,7 @@
 
 #include "ros/ros.h"
 #include <kdl/frames.hpp>
+#include <kdl/tree.hpp>
 #include <tinyxml.h>
 #include "narrowphase.h"
 #include "qhull_interface.h"
@@ -70,6 +71,8 @@ public:
 	void clear();
 	std::string name;
 	int id_;
+	int parent_id_;
+	const KDL::TreeElement *kdl_segment_;
 	typedef std::vector< boost::shared_ptr< Collision > > VecPtrCollision;
 	VecPtrCollision collision_array;
 private:
