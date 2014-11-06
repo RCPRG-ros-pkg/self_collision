@@ -106,6 +106,22 @@ void disableMallocHook()
 	pthread_mutex_unlock(&malloc_mutex);
 }
 
+class Distance
+{
+public:
+	int i_;
+	int j_;
+
+	// distance
+	double d_;
+
+	// position of point at link i in frame i
+	KDL::Vector xi_;
+
+	// position of point at link j in frame i
+	KDL::Vector xj_;
+};
+
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "qhull_test");
@@ -177,7 +193,7 @@ int main(int argc, char **argv)
 
 	std::cout << "joints count: " << joints << std::endl;
 
-	// create map of transformations
+	// create vector of transformations
 	KDL::Frame *transformation_map = new KDL::Frame[collision_model->link_count_];
 
 	// create vector of convex hulls for quick update
@@ -194,6 +210,11 @@ int main(int argc, char **argv)
 			}
 		}
 	}
+
+	// create vector of distances
+	int distances_max_count = 100;
+	int distances_count = 0;
+	Distance *distances = new Distance[distances_max_count];
 
 	pthread_mutex_init(&malloc_mutex, NULL);
 
@@ -281,7 +302,7 @@ int main(int argc, char **argv)
 		}
 
 		// check collisions between links
-		int low_distance_count = 0;
+		distances_count = 0;
 		for (self_collision::CollisionModel::CollisionPairs::iterator it = collision_model->enabled_collisions.begin(); it != collision_model->enabled_collisions.end(); it++)
 		{
 			KDL::Vector d1, d2;
@@ -298,22 +319,32 @@ int main(int argc, char **argv)
 				// iterate through collision objects of link2
 				for (self_collision::Link::VecPtrCollision::const_iterator c_it2 = link2->collision_array.begin(); c_it2 != link2->collision_array.end(); c_it2++)
 				{
-					double distance = self_collision::CollisionModel::getDistance(*((*c_it1)->geometry.get()), T_B_L1 * (*c_it1)->origin, *((*c_it2)->geometry.get()), T_B_L2 * (*c_it2)->origin, d1, d2, param_d0);
+					double dist = self_collision::CollisionModel::getDistance(*((*c_it1)->geometry.get()), T_B_L1 * (*c_it1)->origin, *((*c_it2)->geometry.get()), T_B_L2 * (*c_it2)->origin, d1, d2, param_d0);
 					double dist2 = (d1-d2).Norm();
-					if (distance-dist2 > 0.01 || distance-dist2 < -0.01)
+					if (dist-dist2 > 0.01 || dist-dist2 < -0.01)
 					{
 //						ROS_ERROR("%s  %s   %d  %d  %lf", it->first.c_str(), it->second.c_str(), (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
 					}
-					if (distance < 0.0)
+					if (dist < 0.0)
 					{
-						ROS_INFO("%d  %d   %d  %d   %lf", it->first, it->second, (*c_it1)->geometry->type, (*c_it2)->geometry->type, distance);
+						ROS_INFO("collision: %d  %d   %d  %d   %lf", it->first, it->second, (*c_it1)->geometry->type, (*c_it2)->geometry->type, dist);
 					}
-					else if (distance < param_d0)
+					else if (dist < param_d0)
 					{
-//						m_id = publishLineMarker(vis_pub, m_id, d1, d2, 1, 0, 0);
-						low_distance_count++;
+						if (distances_count >= distances_max_count)
+						{
+							ROS_ERROR("too many low distances");
+						}
+						else
+						{
+							distances[distances_count].i_ = it->first;
+							distances[distances_count].j_ = it->second;
+							distances[distances_count].d_ = dist;
+							distances[distances_count].xi_ = T_B_L1.Inverse() * d1;
+							distances[distances_count].xj_ = T_B_L1.Inverse() * d2;
+							distances_count++;
+						}
 					}
-
 				}
 			}
 		}
@@ -328,9 +359,7 @@ int main(int argc, char **argv)
 		int time_diff32_ns = (ts3.tv_sec - ts2.tv_sec) * 1000000000 + (ts3.tv_nsec - ts2.tv_nsec);
 		double time_diff32_s = (double)time_diff32_ns / 1000000000.0;
 
-
-//		ROS_INFO("low distances: %d", low_distance_count);
-		ROS_INFO("time: %lf + %lf = %lf    %d  %d", time_diff21_s, time_diff32_s, time_diff21_s + time_diff32_s, malloc_count, free_count);
+		ROS_INFO("time: %lf + %lf = %lf  distances: %d   %d  %d", time_diff21_s, time_diff32_s, time_diff21_s + time_diff32_s, distances_count, malloc_count, free_count);
 
 		//
 		// convex hull computation
@@ -379,6 +408,7 @@ int main(int argc, char **argv)
 		// visualization
 		//
 
+		// draw all links' collision objects
 		// iterate through all links
 		for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
 		{
@@ -387,6 +417,13 @@ int main(int argc, char **argv)
 			{
 				m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, transformation_map[l_i] * (*c_it)->origin);
 			}
+		}
+
+		// draw all low distances
+		for (int l_d = 0; l_d < distances_count; l_d++)
+		{
+			KDL::Frame &T_B_L1 = transformation_map[distances[l_d].i_];
+			m_id = publishLineMarker(vis_pub, m_id, T_B_L1 * distances[l_d].xi_, T_B_L1 * distances[l_d].xj_, 1, 0, 0);
 		}
 
 
