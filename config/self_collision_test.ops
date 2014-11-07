@@ -17,7 +17,7 @@ setActivity("self_collision_test", 0, 1, ORO_SCHED_RT)
 //------------------------------------------------------------------------------
 
 loadComponent("SCA", "SelfCollisionAvoidance");
-setActivity("SCA", 0.001, 6, ORO_SCHED_RT);
+setActivity("SCA", 0.01, 6, ORO_SCHED_RT);
 SCA.loadService("rosparam");
 SCA.rosparam.getAll();
 SCA.rosparam.getAbsolute("robot_description");

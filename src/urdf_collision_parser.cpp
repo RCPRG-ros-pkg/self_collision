@@ -25,11 +25,94 @@ void Capsule::clear()
 	length = 0.0;
 }
 
-int Capsule::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
+void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 {
 	const fcl_2::Capsule* ob = static_cast<const fcl_2::Capsule*>(shape.get());
-//	m_id = publishCapsule(pub, m_id, tf, ob->lz, ob->radius);
-	return m_id;
+
+	marker_id_ = 0;
+	if (marker_array.markers.size() > 0)
+	{
+		marker_id_ = marker_array.markers.back().id + 1;
+	}
+
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = "world";
+	marker.ns = "default";
+	marker.id = marker_id_;
+	marker.type = visualization_msgs::Marker::SPHERE;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.scale.x = ob->radius * 2.0;
+	marker.scale.y = ob->radius * 2.0;
+	marker.scale.z = ob->radius * 2.0;
+	marker.color.a = 0.5;
+	marker.color.r = 0.0;
+	marker.color.g = 1.0;
+	marker.color.b = 0.0;
+	marker_array.markers.push_back(marker);
+
+	visualization_msgs::Marker marker2(marker);
+	marker2.id = marker_id_+1;
+	marker_array.markers.push_back(marker2);
+
+	visualization_msgs::Marker marker3(marker);
+	marker3.id = marker_id_+2;
+	marker3.type = visualization_msgs::Marker::CYLINDER;
+	marker3.scale.z = ob->lz;
+	marker_array.markers.push_back(marker3);
+
+	visualization_msgs::Marker marker4(marker);
+	marker4.id = marker_id_+3;
+	marker4.type = visualization_msgs::Marker::SPHERE;
+	marker4.scale.x = 0.01;
+	marker4.scale.y = 0.01;
+	marker4.scale.z = 0.01;
+	marker4.color.a = 1.0;
+	marker4.color.r = 0.0;
+	marker4.color.g = 1.0;
+	marker4.color.b = 0.0;
+	marker_array.markers.push_back(marker4);
+}
+
+void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr)
+{
+	const fcl_2::Capsule* ob = static_cast<const fcl_2::Capsule*>(shape.get());
+
+	double qx, qy, qz, qw;
+	fr.M.GetQuaternion(qx, qy, qz, qw);
+	KDL::Vector v(0,0,ob->lz);
+	KDL::Vector v2 = (fr * v) - (fr * KDL::Vector());
+
+	marker_array.markers[marker_id_].header.stamp = ros::Time();
+	marker_array.markers[marker_id_].pose.position.x = fr.p.x() - v2.x()/2.0;
+	marker_array.markers[marker_id_].pose.position.y = fr.p.y() - v2.y()/2.0;
+	marker_array.markers[marker_id_].pose.position.z = fr.p.z() - v2.z()/2.0;
+	marker_array.markers[marker_id_].pose.orientation.x = qx;
+	marker_array.markers[marker_id_].pose.orientation.y = qy;
+	marker_array.markers[marker_id_].pose.orientation.z = qz;
+	marker_array.markers[marker_id_].pose.orientation.w = qw;
+
+	marker_array.markers[marker_id_+1].header.stamp = ros::Time();
+	marker_array.markers[marker_id_+1].pose.position.x = fr.p.x() + v2.x()/2.0;
+	marker_array.markers[marker_id_+1].pose.position.y = fr.p.y() + v2.y()/2.0;
+	marker_array.markers[marker_id_+1].pose.position.z = fr.p.z() + v2.z()/2.0;
+	marker_array.markers[marker_id_+1].pose.orientation.x = qx;
+	marker_array.markers[marker_id_+1].pose.orientation.y = qy;
+	marker_array.markers[marker_id_+1].pose.orientation.z = qz;
+	marker_array.markers[marker_id_+1].pose.orientation.w = qw;
+
+	marker_array.markers[marker_id_+2].header.stamp = ros::Time();
+	marker_array.markers[marker_id_+2].pose.position.x = fr.p.x();
+	marker_array.markers[marker_id_+2].pose.position.y = fr.p.y();
+	marker_array.markers[marker_id_+2].pose.position.z = fr.p.z();
+	marker_array.markers[marker_id_+2].pose.orientation.x = qx;
+	marker_array.markers[marker_id_+2].pose.orientation.y = qy;
+	marker_array.markers[marker_id_+2].pose.orientation.z = qz;
+	marker_array.markers[marker_id_+2].pose.orientation.w = qw;
+
+	marker_array.markers[marker_id_+3].header.stamp = ros::Time();
+	marker_array.markers[marker_id_+3].pose.position.x = fr.p.x();
+	marker_array.markers[marker_id_+3].pose.position.y = fr.p.y();
+	marker_array.markers[marker_id_+3].pose.position.z = fr.p.z();
 }
 
 Convex::Convex() :
@@ -91,12 +174,20 @@ void Convex::clear()
 	points_id_.clear();
 }
 
+void Convex::addMarkers(visualization_msgs::MarkerArray &marker_array)
+{
+}
+
+void Convex::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr)
+{
+}
+/*
 int Convex::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
 {
 	const fcl_2::Convex* ob = static_cast<const fcl_2::Convex*>(shape.get());
 //	m_id = publishMeshMarker(pub, m_id, tf, ob->points, ob->num_planes, ob->polygons, 0, 0, 1);
 	return m_id;
-}
+}*/
 
 void Collision::clear()
 {
@@ -118,7 +209,7 @@ boost::shared_ptr< const Link > CollisionModel::getLink(int id)
 	return links_[id];
 }
 
-int CollisionModel::getLinkId(const std::string &name)
+int CollisionModel::getLinkIndex(const std::string &name)
 {
 	for (int l_i = 0; l_i < link_count_; l_i++)
 	{
@@ -439,8 +530,8 @@ void CollisionModel::parseSRDF(const std::string &xml_string)
 		std::string link1, link2;
 		try {
 			parseDisableCollision(link1, link2, disable_collision_xml);
-			int link1_id = getLinkId(link1);
-			int link2_id = getLinkId(link2);
+			int link1_id = getLinkIndex(link1);
+			int link2_id = getLinkIndex(link2);
 			if (link1_id == -1)
 			{
 				ROS_ERROR("link '%s' does not exist.", link1.c_str());
@@ -512,14 +603,14 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 	model->links_ = new boost::shared_ptr<Link>[link_count];
 	model->link_count_ = link_count;
 
-	int link_id=0;
+	int link_index=0;
 	// Get all Link elements
-	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"), link_id++)
+	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"), link_index++)
 	{
-		model->links_[link_id].reset(new Link);
-		model->links_[link_id]->id_ = link_id;
+		model->links_[link_index].reset(new Link);
+		model->links_[link_index]->index_ = link_index;
 		try {
-			parseLink(*(model->links_[link_id]), link_xml);
+			parseLink(*(model->links_[link_index]), link_xml);
 		}
 		catch (urdf::ParseError &e) {
 			ROS_ERROR("link xml is not initialized correctly");
@@ -538,7 +629,7 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 				conv->points_id_.clear();
 				for (Convex::ConvexPointsStrVector::iterator p_it = conv->points_str_.begin(); p_it != conv->points_str_.end(); p_it++)
 				{
-					int id = model->getLinkId(p_it->first);
+					int id = model->getLinkIndex(p_it->first);
 					if (id == -1)
 					{
 						ROS_ERROR("parseURDF: could not find link %s", p_it->first.c_str());

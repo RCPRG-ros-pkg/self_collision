@@ -37,6 +37,12 @@ public:
 
 	// position of point at link j in frame i
 	KDL::Vector xj_;
+
+	int marker_id_;
+
+	void addMarkers(visualization_msgs::MarkerArray &marker_array);
+	void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_i);
+
 };
 
 class SelfCollisionAvoidance: public RTT::TaskContext {
@@ -56,9 +62,9 @@ private:
 
 	int joints_count_;
 	boost::shared_ptr<self_collision::CollisionModel> collision_model_;
-	std::map<std::string,int> joint_name_2_id_map_;
-	std::vector<double> joint_positions_by_id_;
-	std::vector<KDL::Frame> transformations_by_id_;
+	std::map<std::string,int> joint_name_2_index_map_;
+	std::vector<double> joint_positions_by_index_;
+	std::vector<KDL::Frame> transformations_by_index_;
 	std::vector<int> fk_seq_;
 	std::vector<Distance> distances;
 
@@ -66,7 +72,7 @@ private:
 	std::string prop_robot_description_;
 	std::string prop_robot_semantic_description_;
 	int prop_distances_count_;
-	int prop_d0_;
+	double prop_d0_;
 
 /*  RTT::InputPort<cartesian_trajectory_msgs::CartesianTrajectoryConstPtr > port_trajectory_;
   RTT::InputPort<geometry_msgs::Pose > port_cartesian_position_;

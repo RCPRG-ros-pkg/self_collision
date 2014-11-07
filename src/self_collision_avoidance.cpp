@@ -18,6 +18,98 @@
 #include <kdl_parser/kdl_parser.hpp>
 #include "urdf_collision_parser.h"
 
+void Distance::addMarkers(visualization_msgs::MarkerArray &marker_array)
+{
+	marker_id_ = 0;
+	if (marker_array.markers.size() > 0)
+	{
+		marker_id_ = marker_array.markers.back().id + 1;
+	}
+
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = "world";
+	marker.ns = "default";
+	marker.id = marker_id_;
+	marker.type = visualization_msgs::Marker::LINE_LIST;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.pose.position.x = 0;
+	marker.pose.position.y = 0;
+	marker.pose.position.z = 0;
+	marker.pose.orientation.x = 0.0;
+	marker.pose.orientation.y = 0.0;
+	marker.pose.orientation.z = 0.0;
+	marker.pose.orientation.w = 1.0;
+	marker.points.resize(2);
+	marker.scale.x = 0.01;
+	marker.color.a = 1.0;
+	marker.color.r = 1;
+	marker.color.g = 1;
+	marker.color.b = 0;
+	marker_array.markers.push_back(marker);
+
+	visualization_msgs::Marker marker2;
+	marker2.header.frame_id = "world";
+	marker2.ns = "default";
+	marker2.id = marker_id_+1;
+	marker2.type = visualization_msgs::Marker::SPHERE;
+	marker2.action = visualization_msgs::Marker::ADD;
+	marker2.pose.orientation.x = 0.0;
+	marker2.pose.orientation.y = 0.0;
+	marker2.pose.orientation.z = 0.0;
+	marker2.pose.orientation.w = 1.0;
+	marker2.scale.x = 0.02;
+	marker2.scale.y = 0.02;
+	marker2.scale.z = 0.02;
+	marker2.color.a = 1.0;
+	marker2.color.r = 1;
+	marker2.color.g = 0;
+	marker2.color.b = 0;
+	marker_array.markers.push_back(marker2);
+
+	visualization_msgs::Marker marker3;
+	marker3.header.frame_id = "world";
+	marker3.ns = "default";
+	marker3.id = marker_id_+2;
+	marker3.type = visualization_msgs::Marker::SPHERE;
+	marker3.action = visualization_msgs::Marker::ADD;
+	marker3.pose.orientation.x = 0.0;
+	marker3.pose.orientation.y = 0.0;
+	marker3.pose.orientation.z = 0.0;
+	marker3.pose.orientation.w = 1.0;
+	marker3.scale.x = 0.02;
+	marker3.scale.y = 0.02;
+	marker3.scale.z = 0.02;
+	marker3.color.a = 1.0;
+	marker3.color.r = 0;
+	marker3.color.g = 1;
+	marker3.color.b = 0;
+	marker_array.markers.push_back(marker3);
+}
+
+void Distance::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_i)
+{
+	KDL::Vector pos1 = T_B_i * xi_;
+	KDL::Vector pos2 = T_B_i * xj_;
+
+	marker_array.markers[marker_id_].header.stamp = ros::Time();
+	marker_array.markers[marker_id_].points[0].x = pos1.x();
+	marker_array.markers[marker_id_].points[0].y = pos1.y();
+	marker_array.markers[marker_id_].points[0].z = pos1.z();
+	marker_array.markers[marker_id_].points[1].x = pos2.x();
+	marker_array.markers[marker_id_].points[1].y = pos2.y();
+	marker_array.markers[marker_id_].points[1].z = pos2.z();
+
+	marker_array.markers[marker_id_+1].header.stamp = ros::Time();
+	marker_array.markers[marker_id_+1].pose.position.x = pos1.x();
+	marker_array.markers[marker_id_+1].pose.position.y = pos1.y();
+	marker_array.markers[marker_id_+1].pose.position.z = pos1.z();
+
+	marker_array.markers[marker_id_+2].header.stamp = ros::Time();
+	marker_array.markers[marker_id_+2].pose.position.x = pos2.x();
+	marker_array.markers[marker_id_+2].pose.position.y = pos2.y();
+	marker_array.markers[marker_id_+2].pose.position.z = pos2.z();
+}
+
 SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	RTT::TaskContext(name),
 	joints_count_(0)
@@ -51,6 +143,12 @@ bool SelfCollisionAvoidance::configureHook() {
 	collision_model_->parseSRDF(prop_robot_semantic_description_);
 	collision_model_->generateCollisionPairs();
 
+	// update the links graph with KDL data
+	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
+	{
+		collision_model_->links_[l_i]->kdl_segment_ = &(robot_tree.getSegment(collision_model_->links_[l_i]->name)->second);
+	}
+
 	// prepare the map of joint states
 	for (KDL::SegmentMap::const_iterator seg_it = robot_tree.getSegments().begin(); seg_it != robot_tree.getSegments().end(); seg_it++)
 	{
@@ -60,22 +158,33 @@ bool SelfCollisionAvoidance::configureHook() {
 			type == KDL::Joint::RotY ||
 			type == KDL::Joint::RotZ)
 		{
-			joint_name_2_id_map_.insert(std::make_pair<std::string,int>(seg_it->second.segment.getJoint().getName(),seg_it->second.q_nr));
+			std::string j_name = seg_it->second.segment.getJoint().getName();
+			std::string l_name = seg_it->second.segment.getName();
+			int l_index = -1;
+			for (int l_i=0; l_i<collision_model_->link_count_; l_i++)
+			{
+				if (l_name == collision_model_->links_[l_i]->name)
+				{
+					l_index = l_i;
+					break;
+				}
+			}
+			if (l_index == -1)
+			{
+				RTT::log(RTT::Error) << "could not find link: " << l_name << std::endl;
+				return false;
+			}
+			RTT::log(RTT::Info) << "joint_name_2_index_map_: " << j_name << " " << l_name << " " << l_index << std::endl;
+			joint_name_2_index_map_.insert(std::make_pair<std::string,int>(j_name,l_index));
 		}		
 	}
 
-	joints_count_ = joint_name_2_id_map_.size();
+	joints_count_ = joint_name_2_index_map_.size();
 	RTT::log(RTT::Info) << "number of joints:" << joints_count_ << std::endl;
 
-	joint_positions_by_id_.resize(joints_count_);
+	joint_positions_by_index_.resize(collision_model_->link_count_);
 
-	transformations_by_id_.resize(collision_model_->link_count_);
-
-	// update the links graph with KDL data
-	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
-	{
-		collision_model_->links_[l_i]->kdl_segment_ = &(robot_tree.getSegment(collision_model_->links_[l_i]->name)->second);
-	}
+	transformations_by_index_.resize(collision_model_->link_count_);
 
 	//
 	// create vector of proper fk calculation link sequence (sort the links graph)
@@ -87,11 +196,13 @@ bool SelfCollisionAvoidance::configureHook() {
 		urdf::Link *parent_link = robot_model_.getLink( collision_model_->links_[l_i]->name )->getParent().get();
 		if (parent_link != NULL)
 		{
-			collision_model_->links_[l_i]->parent_id_ = collision_model_->getLinkId( parent_link->name );
+			RTT::log(RTT::Info) << "link: " << collision_model_->links_[l_i]->name << ", parent: " << collision_model_->links_[collision_model_->getLinkIndex( parent_link->name )]->name << std::endl;
+			collision_model_->links_[l_i]->parent_index_ = collision_model_->getLinkIndex( parent_link->name );
 		}
 		else
 		{
-			collision_model_->links_[l_i]->parent_id_ = -1;
+			RTT::log(RTT::Info) << "link: " << collision_model_->links_[l_i]->name << ", parent: NULL" << std::endl;
+			collision_model_->links_[l_i]->parent_index_ = -1;
 			fk_seq_[0] = l_i;
 		}
 	}
@@ -106,7 +217,7 @@ bool SelfCollisionAvoidance::configureHook() {
 			for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
 			{
 				// found child of already added link
-				if (collision_model_->links_[l_i]->parent_id_ == fk_seq_[i])
+				if (collision_model_->links_[l_i]->parent_index_ == fk_seq_[i])
 				{
 					// check if the child was added
 					bool child_already_added = false;
@@ -135,18 +246,49 @@ bool SelfCollisionAvoidance::configureHook() {
 	}
 
 	// create vector of distances
-	int distances_max_count = 100;
-	int distances_count = 0;
 	distances.resize(prop_distances_count_);
 
-
-
+	//
 	// prepare communication buffers
+	//
+
+	// joint_states
 	joint_states_.name.resize(joints_count_);
 	joint_states_.position.resize(joints_count_);
 	joint_states_.velocity.resize(joints_count_);
 	joint_states_.effort.resize(joints_count_);
 
+	// visualization
+	// draw all links' collision objects
+	// iterate through all links
+	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
+	{
+		// iterate through collision objects
+		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model_->links_[l_i]->collision_array.begin(); c_it != collision_model_->links_[l_i]->collision_array.end(); c_it++)
+		{
+			(*c_it)->geometry->addMarkers(markers_);
+
+//			m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, transformation_map[l_i] * (*c_it)->origin);
+		}
+	}
+
+	// add markers for distances
+	for (int i=0; i<prop_distances_count_; i++)
+	{
+		distances[i].addMarkers(markers_);
+		RTT::log(RTT::Info) << "distance[" << i << "].marker_id_ == " << distances[i].marker_id_ << std::endl;
+	}
+
+	// draw all low distances
+//	for (int l_d = 0; l_d < distances_count; l_d++)
+//	{
+//		KDL::Frame &T_B_L1 = transformation_map[distances[l_d].i_];
+//		m_id = publishLineMarker(vis_pub, m_id, T_B_L1 * distances[l_d].xi_, T_B_L1 * distances[l_d].xj_, 1, 0, 0);
+//	}
+
+	RTT::log(RTT::Info) << "prop_d0_: " << prop_d0_ << std::endl;
+	RTT::log(RTT::Info) << "prop_distances_count_: " << prop_distances_count_ << std::endl;
+		
 
 //	port_JointPosition.setDataSample(jnt_pos_);
 	return true;
@@ -179,22 +321,22 @@ void SelfCollisionAvoidance::updateHook() {
 	// arrange the joint positions to their ids in the KDL tree
 	for (int i=0; i<joint_states_.name.size(); i++)
 	{
-		joint_positions_by_id_[ joint_name_2_id_map_[joint_states_.name[i]] ] = joint_states_.position[i];
+		joint_positions_by_index_[ joint_name_2_index_map_[joint_states_.name[i]] ] = joint_states_.position[i];
 	}
 
 	// calculate the forward kinematics for all links
 	for (int fk_i = 0; fk_i < collision_model_->link_count_; fk_i++)
 	{
 		int l_i = fk_seq_[fk_i];
-		int parent_i = collision_model_->links_[l_i]->parent_id_;
-		double q_i = joint_positions_by_id_[l_i];
+		int parent_i = collision_model_->links_[l_i]->parent_index_;
+		double q_i = joint_positions_by_index_[l_i];
 		if (parent_i == -1)
 		{
-			transformations_by_id_[l_i] = collision_model_->links_[l_i]->kdl_segment_->segment.pose(q_i);
+			transformations_by_index_[l_i] = collision_model_->links_[l_i]->kdl_segment_->segment.pose(q_i);
 		}
 		else
 		{
-			transformations_by_id_[l_i] = transformations_by_id_[parent_i] * collision_model_->links_[l_i]->kdl_segment_->segment.pose(q_i);
+			transformations_by_index_[l_i] = transformations_by_index_[parent_i] * collision_model_->links_[l_i]->kdl_segment_->segment.pose(q_i);
 		}
 	}
 
@@ -204,8 +346,8 @@ void SelfCollisionAvoidance::updateHook() {
 	{
 		KDL::Vector d1, d2;
 		KDL::Frame T_l1, T_l2;
-		KDL::Frame &T_B_L1 = transformations_by_id_[it->first];
-		KDL::Frame &T_B_L2 = transformations_by_id_[it->second];
+		KDL::Frame &T_B_L1 = transformations_by_index_[it->first];
+		KDL::Frame &T_B_L2 = transformations_by_index_[it->second];
 
 		boost::shared_ptr< const self_collision::Link > link1 = collision_model_->getLink(it->first);
 		boost::shared_ptr< const self_collision::Link > link2 = collision_model_->getLink(it->second);
@@ -225,13 +367,13 @@ void SelfCollisionAvoidance::updateHook() {
 
 				if (dist < 0.0)
 				{
-					RTT::log(RTT::Error) << "collision: " << it->first << " " << it->second << " " << (*c_it1)->geometry->type << " " << (*c_it2)->geometry->type << " " << dist << std::endl;
+//					RTT::log(RTT::Error) << "collision: " << it->first << " " << it->second << " " << (*c_it1)->geometry->type << " " << (*c_it2)->geometry->type << " " << dist << std::endl;
 				}
 				else if (dist < prop_d0_)
 				{
 					if (distances_count >= prop_distances_count_)
 					{
-						RTT::log(RTT::Error) << "too many low distances" << std::endl;
+//						RTT::log(RTT::Error) << "too many low distances" << std::endl;
 					}
 					else
 					{
@@ -247,8 +389,36 @@ void SelfCollisionAvoidance::updateHook() {
 		}
 	}
 
+	// visualization
+	// update collision model markers
+	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
+	{
+		// iterate through collision objects
+		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model_->links_[l_i]->collision_array.begin(); c_it != collision_model_->links_[l_i]->collision_array.end(); c_it++)
+		{
+			(*c_it)->geometry->updateMarkers(markers_, transformations_by_index_[l_i] * (*c_it)->origin);
+		}
+	}
 
+	if (distances_count > 0)
+	{
+//		RTT::log(RTT::Info) << "distances: " << distances_count << std::endl;
+	}
 
+	// update distance markers
+	for (int i=0; i<prop_distances_count_; i++)
+	{
+		if (i >= distances_count)
+		{
+			distances[i].i_ = 0;
+			distances[i].j_ = 0;
+			distances[i].xi_ = KDL::Vector();
+			distances[i].xj_ = KDL::Vector();
+		}
+		distances[i].updateMarkers(markers_, transformations_by_index_[distances[i].i_]);
+	}
+
+	markers_out_.write(markers_);
 
 
 

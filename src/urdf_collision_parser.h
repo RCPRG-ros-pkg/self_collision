@@ -20,7 +20,9 @@ public:
 	boost::shared_ptr<fcl_2::ShapeBase> shape;
 	Geometry(int type);
 	virtual void clear() = 0;
-	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf) = 0;
+	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array) = 0;
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr) = 0;
+	int marker_id_;
 private:
 };
 
@@ -31,7 +33,8 @@ public:
 	double radius;
 	double length;
 	virtual void clear();
-	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf);
+	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array);
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr);
 private:
 };
 
@@ -49,7 +52,8 @@ public:
 	KDL::Vector center_;
 	double radius_;
 	virtual void clear();
-	virtual int publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf);
+	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array);
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr);
 private:
 };
 
@@ -70,8 +74,8 @@ class Link
 public:
 	void clear();
 	std::string name;
-	int id_;
-	int parent_id_;
+	int index_;
+	int parent_index_;
 	const KDL::TreeElement *kdl_segment_;
 	typedef std::vector< boost::shared_ptr< Collision > > VecPtrCollision;
 	VecPtrCollision collision_array;
@@ -91,7 +95,7 @@ public:
 	CollisionPairs enabled_collisions;
 
 	boost::shared_ptr< const Link > getLink(int id);
-	int getLinkId(const std::string &name);
+	int getLinkIndex(const std::string &name);
 	void generateCollisionPairs();
 	static double getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out, double d0);
 
