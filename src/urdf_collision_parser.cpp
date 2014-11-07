@@ -28,7 +28,8 @@ void Capsule::clear()
 int Capsule::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
 {
 	const fcl_2::Capsule* ob = static_cast<const fcl_2::Capsule*>(shape.get());
-	m_id = publishCapsule(pub, m_id, tf, ob->lz, ob->radius);
+//	m_id = publishCapsule(pub, m_id, tf, ob->lz, ob->radius);
+	return m_id;
 }
 
 Convex::Convex() :
@@ -93,7 +94,7 @@ void Convex::clear()
 int Convex::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
 {
 	const fcl_2::Convex* ob = static_cast<const fcl_2::Convex*>(shape.get());
-	m_id = publishMeshMarker(pub, m_id, tf, ob->points, ob->num_planes, ob->polygons, 0, 0, 1);
+//	m_id = publishMeshMarker(pub, m_id, tf, ob->points, ob->num_planes, ob->polygons, 0, 0, 1);
 	return m_id;
 }
 

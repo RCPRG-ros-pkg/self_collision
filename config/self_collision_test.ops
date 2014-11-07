@@ -1,0 +1,32 @@
+import("rtt_ros");
+import("rtt_roscomm");
+import("rtt_rosparam");
+
+ros.import("eigen_typekit");
+//ros.import("rtt_control_msgs");
+ros.import("self_collision");
+//ros.import("rtt_cartesian_trajectory_msgs");
+ros.import("rtt_sensor_msgs");
+ros.import("rtt_visualization_msgs");
+//ros.import("rtt_tf");
+
+setActivity("self_collision_test", 0, 1, ORO_SCHED_RT)
+
+//------------------------------------------------------------------------------
+//-- Hardware interface
+//------------------------------------------------------------------------------
+
+loadComponent("SCA", "SelfCollisionAvoidance");
+setActivity("SCA", 0.001, 6, ORO_SCHED_RT);
+SCA.loadService("rosparam");
+SCA.rosparam.getAll();
+SCA.rosparam.getAbsolute("robot_description");
+SCA.rosparam.getAbsolute("robot_semantic_description");
+
+stream("SCA.dbg_joint_states", ros.comm.topic("/joint_states"));
+stream("SCA.dbg_markers", ros.comm.topic("/velma_markers"));
+
+SCA.configure();
+SCA.start();
+
+

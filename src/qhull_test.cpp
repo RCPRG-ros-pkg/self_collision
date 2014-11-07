@@ -239,7 +239,6 @@ int main(int argc, char **argv)
 	// update parent link information
 	for (int l_i = 0; l_i < collision_model->link_count_; l_i++)
 	{
-//		ROS_INFO("looking for parent for: %s", collision_model->links_[l_i]->name.c_str());
 		urdf::Link *parent_link = robot_model_.getLink( collision_model->links_[l_i]->name )->getParent().get();
 		if (parent_link != NULL)
 		{

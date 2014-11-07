@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="LOG_LEVEL" default="debug"/>
+  <arg name="DEBUG" default="false"/>
+
+  <!-- Orocos target (gnulinux, xenomai, etc) -->
+  <arg name="OROCOS_TARGET" default="$(optenv OROCOS_TARGET)"/>
+  <!-- Path to look for dynamically-loaded plugins and components (something like /lib/orocos) -->
+  <arg name="RTT_COMPONENT_PATH" default="$(env RTT_COMPONENT_PATH)"/>
+
+  <node
+    name="self_collision_avoidance"
+    pkg="rtt_ros" type="deployer"
+    args="--DeployerName self_collision_test -l $(arg LOG_LEVEL) -s $(find self_collision)/config/self_collision_test.ops --" output="screen">
+    <env name="OROCOS_TARGET" value="$(arg OROCOS_TARGET)"/>
+    <env name="RTT_COMPONENT_PATH" value="$(arg RTT_COMPONENT_PATH)"/>
+  </node>
+
+  <group ns="self_collision_avoidance">
+    <rosparam>
+      SCA:
+        distances_count: 100
+        d0: 0.15
+    </rosparam>
+  </group>
+</launch>
