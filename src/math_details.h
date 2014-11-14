@@ -32,6 +32,14 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
+
+
 #ifndef FCL_MATH_DETAILS_H
 #define FCL_MATH_DETAILS_H
 

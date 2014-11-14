@@ -1,22 +1,44 @@
-// Copyright 2014 WUT
 /*
- * self_collision_avoidance.cpp
+ * Software License Agreement (BSD License)
  *
- *  Created on: 06 nov 2014
- *      Author: dseredyn
+ *  Copyright (c) 2011, Willow Garage, Inc.
+ *  All rights reserved.
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
+ *  are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above
+ *     copyright notice, this list of conditions and the following
+ *     disclaimer in the documentation and/or other materials provided
+ *     with the distribution.
+ *   * Neither the name of Willow Garage, Inc. nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ *  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ *  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ *  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ *  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+/** \author Dawid Seredynski */
+
 #include "self_collision_avoidance.h"
-
-//#include <string>
-
-//#include "rtt_rosclock/rtt_rosclock.h"
-//#include "Eigen/Geometry"
 #include "rtt/Component.hpp"
 
 #include "urdf/model.h"
 #include <kdl_parser/kdl_parser.hpp>
-#include "urdf_collision_parser.h"
 
 void Distance::addMarkers(visualization_msgs::MarkerArray &marker_array)
 {
@@ -41,6 +63,8 @@ void Distance::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker.pose.orientation.w = 1.0;
 	marker.points.resize(2);
 	marker.scale.x = 0.01;
+	marker.scale.y = 0.01;
+	marker.scale.z = 0.01;
 	marker.color.a = 1.0;
 	marker.color.r = 1;
 	marker.color.g = 1;
@@ -91,13 +115,19 @@ void Distance::updateMarkers(visualization_msgs::MarkerArray &marker_array, cons
 	KDL::Vector pos1 = T_B_i * xi_;
 	KDL::Vector pos2 = T_B_i * xj_;
 
+	if (marker_id_+2 >= marker_array.markers.size())
+	{
+		std::cout<<"Distance::updateMarkers ERROR!"<<std::endl;
+		*((int*)NULL) = 1;
+	}
+
 	marker_array.markers[marker_id_].header.stamp = ros::Time();
-	marker_array.markers[marker_id_].points[0].x = pos1.x();
-	marker_array.markers[marker_id_].points[0].y = pos1.y();
-	marker_array.markers[marker_id_].points[0].z = pos1.z();
-	marker_array.markers[marker_id_].points[1].x = pos2.x();
-	marker_array.markers[marker_id_].points[1].y = pos2.y();
-	marker_array.markers[marker_id_].points[1].z = pos2.z();
+	marker_array.markers[marker_id_].points.at(0).x = pos1.x();
+	marker_array.markers[marker_id_].points.at(0).y = pos1.y();
+	marker_array.markers[marker_id_].points.at(0).z = pos1.z();
+	marker_array.markers[marker_id_].points.at(1).x = pos2.x();
+	marker_array.markers[marker_id_].points.at(1).y = pos2.y();
+	marker_array.markers[marker_id_].points.at(1).z = pos2.z();
 
 	marker_array.markers[marker_id_+1].header.stamp = ros::Time();
 	marker_array.markers[marker_id_+1].pose.position.x = pos1.x();
@@ -120,6 +150,9 @@ SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	this->addProperty("d0", prop_d0_);
 	this->ports()->addPort("dbg_joint_states", joint_in_);
 	this->ports()->addPort("dbg_markers", markers_out_);
+
+	this->ports()->addPort("QhullDataIn", qhull_data_in_2_);
+	this->ports()->addPort("QhullPointsOut", qhull_points_out_2_);
 }
 
 SelfCollisionAvoidance::~SelfCollisionAvoidance() {
@@ -128,8 +161,7 @@ SelfCollisionAvoidance::~SelfCollisionAvoidance() {
 bool SelfCollisionAvoidance::configureHook() {
 
 	// read KDL::Tree form the robot_description
-	KDL::Tree robot_tree;
-	if (!kdl_parser::treeFromString(prop_robot_description_, robot_tree))
+	if (!kdl_parser::treeFromString(prop_robot_description_, robot_tree_))
 	{
 		RTT::log(RTT::Error) << "could not read robot_description parameter" << std::endl;
 		return false;
@@ -146,11 +178,11 @@ bool SelfCollisionAvoidance::configureHook() {
 	// update the links graph with KDL data
 	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
 	{
-		collision_model_->links_[l_i]->kdl_segment_ = &(robot_tree.getSegment(collision_model_->links_[l_i]->name)->second);
+		collision_model_->links_[l_i]->kdl_segment_ = &(robot_tree_.getSegment(collision_model_->links_[l_i]->name)->second);
 	}
 
 	// prepare the map of joint states
-	for (KDL::SegmentMap::const_iterator seg_it = robot_tree.getSegments().begin(); seg_it != robot_tree.getSegments().end(); seg_it++)
+	for (KDL::SegmentMap::const_iterator seg_it = robot_tree_.getSegments().begin(); seg_it != robot_tree_.getSegments().end(); seg_it++)
 	{
 		KDL::Joint::JointType type = seg_it->second.segment.getJoint().getType();
 		if (	type == KDL::Joint::RotAxis ||
@@ -248,9 +280,58 @@ bool SelfCollisionAvoidance::configureHook() {
 	// create vector of distances
 	distances.resize(prop_distances_count_);
 
+	// create vector of convex hulls for quick update
+	// iterate through all links
+	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
+	{
+		// iterate through collision objects
+		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model_->links_[l_i]->collision_array.begin(); c_it != collision_model_->links_[l_i]->collision_array.end(); c_it++)
+		{
+			if ((*c_it)->geometry->type == self_collision::Geometry::CONVEX)
+			{
+				convex_hull_vector_.push_back(*c_it);
+			}
+		}
+	}
+
+	//
+	// prepare ports for convex hull
+	//
+	qhull_data_in_.resize(convex_hull_vector_.size());
+	qhull_data_.resize(convex_hull_vector_.size());
+
+	qhull_points_out_.resize(convex_hull_vector_.size());
+	qhull_points_.resize(convex_hull_vector_.size());
+
+	for (int i=0; i<convex_hull_vector_.size(); i++)
+	{
+		char name[30];
+		snprintf(name, sizeof(name), "QhullDataIn%d", i);
+		qhull_data_in_[i] = new typeof(*qhull_data_in_[i]);
+		this->ports()->addPort(name, *qhull_data_in_[i]);
+
+		snprintf(name, sizeof(name), "QhullPointsOut%d", i);
+		qhull_points_out_[i] = new typeof(*qhull_points_out_[i]);
+		this->ports()->addPort(name, *qhull_points_out_[i]);
+	}
+
 	//
 	// prepare communication buffers
 	//
+	qhull_data_2_.qhulls.resize(convex_hull_vector_.size());
+	for (int i=0; i<convex_hull_vector_.size(); i++)
+	{
+		qhull_data_2_.qhulls[i].points.resize(40);
+		qhull_data_2_.qhulls[i].polygons.resize(40*6);
+	}
+
+	qhull_points_2_.point_lists.resize(convex_hull_vector_.size());
+	for (int i=0; i<convex_hull_vector_.size(); i++)
+	{
+		qhull_points_2_.point_lists[i].points.resize(40);
+	}
+
+	qhull_points_out_2_.setDataSample(qhull_points_2_);
 
 	// joint_states
 	joint_states_.name.resize(joints_count_);
@@ -267,8 +348,6 @@ bool SelfCollisionAvoidance::configureHook() {
 		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model_->links_[l_i]->collision_array.begin(); c_it != collision_model_->links_[l_i]->collision_array.end(); c_it++)
 		{
 			(*c_it)->geometry->addMarkers(markers_);
-
-//			m_id = (*c_it)->geometry->publishMarker(vis_pub, m_id, transformation_map[l_i] * (*c_it)->origin);
 		}
 	}
 
@@ -276,21 +355,15 @@ bool SelfCollisionAvoidance::configureHook() {
 	for (int i=0; i<prop_distances_count_; i++)
 	{
 		distances[i].addMarkers(markers_);
-		RTT::log(RTT::Info) << "distance[" << i << "].marker_id_ == " << distances[i].marker_id_ << std::endl;
 	}
 
-	// draw all low distances
-//	for (int l_d = 0; l_d < distances_count; l_d++)
-//	{
-//		KDL::Frame &T_B_L1 = transformation_map[distances[l_d].i_];
-//		m_id = publishLineMarker(vis_pub, m_id, T_B_L1 * distances[l_d].xi_, T_B_L1 * distances[l_d].xj_, 1, 0, 0);
-//	}
+	markers_out_.setDataSample(markers_);
 
 	RTT::log(RTT::Info) << "prop_d0_: " << prop_d0_ << std::endl;
 	RTT::log(RTT::Info) << "prop_distances_count_: " << prop_distances_count_ << std::endl;
-		
 
-//	port_JointPosition.setDataSample(jnt_pos_);
+	calculated_fk_.resize(collision_model_->link_count_);
+	
 	return true;
 }
 
@@ -309,19 +382,38 @@ bool SelfCollisionAvoidance::startHook() {
   return true;*/
 }
 
+void SelfCollisionAvoidance::stopHook() {
+//	for (int i=0; i<markers_.markers.size(); i++)
+//	{
+//		std::cout << i << ": " << markers_.markers[i].pose.position.x << " " << markers_.markers[i].pose.position.y << " " << markers_.markers[i].pose.position.z << std::endl;		
+//	}
+}
+
 void SelfCollisionAvoidance::updateHook() {
 	joint_in_.read(joint_states_);
-
+//	for (int i=0; i<convex_hull_vector_.size(); i++)
+//	{
+//		qhull_data_in_[i]->read(qhull_data_[i]);
+//	}
 	if (joint_states_.name.size() != joints_count_)
 	{
-		RTT::log(RTT::Error) << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
+//		RTT::log(RTT::Error) << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
+		std::cout << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
+		stop();
 		return;
 	}
+
+	qhull_data_in_2_.read(qhull_data_2_);
 
 	// arrange the joint positions to their ids in the KDL tree
 	for (int i=0; i<joint_states_.name.size(); i++)
 	{
 		joint_positions_by_index_[ joint_name_2_index_map_[joint_states_.name[i]] ] = joint_states_.position[i];
+	}
+
+	for (int l_i=0; l_i<collision_model_->link_count_; l_i++)
+	{
+		calculated_fk_[l_i] = false;
 	}
 
 	// calculate the forward kinematics for all links
@@ -330,6 +422,12 @@ void SelfCollisionAvoidance::updateHook() {
 		int l_i = fk_seq_[fk_i];
 		int parent_i = collision_model_->links_[l_i]->parent_index_;
 		double q_i = joint_positions_by_index_[l_i];
+
+		if (collision_model_->links_[l_i]->kdl_segment_->segment.getName() != collision_model_->links_[l_i]->name)
+		{
+			std::cout << "inconsistent KDL tree" << std::endl;
+			stop();
+		}
 		if (parent_i == -1)
 		{
 			transformations_by_index_[l_i] = collision_model_->links_[l_i]->kdl_segment_->segment.pose(q_i);
@@ -338,6 +436,64 @@ void SelfCollisionAvoidance::updateHook() {
 		{
 			transformations_by_index_[l_i] = transformations_by_index_[parent_i] * collision_model_->links_[l_i]->kdl_segment_->segment.pose(q_i);
 		}
+		calculated_fk_[l_i] = true;
+	}
+
+	for (int l_i=0; l_i<collision_model_->link_count_; l_i++)
+	{
+		if (!calculated_fk_[l_i])
+		{
+//			RTT::log(RTT::Error) << "could not calculate fk: " << l_i << std::endl;
+			std::cout << "could not calculate fk: " << l_i << std::endl;
+			stop();
+			return;
+		}
+	}
+
+	//
+	// update convex hulls
+	//
+	int convex_idx = 0;
+	for (self_collision::Link::VecPtrCollision::iterator it = convex_hull_vector_.begin(); it != convex_hull_vector_.end(); it++, convex_idx++)
+	{
+			self_collision::Convex* convex = static_cast<self_collision::Convex*>((*it)->geometry.get());
+			KDL::Frame &T_B_L = transformations_by_index_[(*it)->parent_->index_];
+
+			qhull_points_2_.point_lists[convex_idx].num_points = 0;
+//			qhull_points_[convex_idx].num_points = 0;
+			for (self_collision::Convex::ConvexPointsIdVector::iterator pt_it = convex->points_id_.begin(); pt_it != convex->points_id_.end(); pt_it++)
+			{
+				KDL::Frame &T_B_F = transformations_by_index_[pt_it->first];
+				KDL::Frame T_E_F = (T_B_L * (*it)->origin).Inverse() * T_B_F;
+				KDL::Vector pt = T_E_F * pt_it->second;
+				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].x = pt.x();
+				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].y = pt.y();
+				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].z = pt.z();
+//				qhull_points_[convex_idx].points[ qhull_points_[convex_idx].num_points ] = T_E_F * pt_it->second;
+				qhull_points_2_.point_lists[convex_idx].num_points++;
+//				qhull_points_[convex_idx].num_points++;
+			}
+			
+//			convex->updateConvex(qhull_data_[convex_idx].num_points, qhull_data_[convex_idx].points, qhull_data_[convex_idx].num_planes, qhull_data_[convex_idx].polygons);
+			convex->updateConvex(qhull_data_2_.qhulls[convex_idx].num_points, qhull_data_2_.qhulls[convex_idx].points, qhull_data_2_.qhulls[convex_idx].num_planes, qhull_data_2_.qhulls[convex_idx].polygons);
+			KDL::Vector center;
+			for (int p_idx=0; p_idx<qhull_data_[convex_idx].num_points; p_idx++)
+			{
+				center += qhull_data_[convex_idx].points[p_idx];
+			}
+			center = 1.0/(double)qhull_data_[convex_idx].num_points * center;
+
+			double radius = 0.0;
+			for (int p_idx=0; p_idx<qhull_data_[convex_idx].num_points; p_idx++)
+			{
+				double d = (qhull_data_[convex_idx].points[p_idx]-center).Norm();
+				if (d > radius)
+				{
+					radius = d;
+				}
+			}
+			convex->center_ = center;
+			convex->radius_ = radius;
 	}
 
 	// check collisions between links
@@ -397,12 +553,12 @@ void SelfCollisionAvoidance::updateHook() {
 		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model_->links_[l_i]->collision_array.begin(); c_it != collision_model_->links_[l_i]->collision_array.end(); c_it++)
 		{
 			(*c_it)->geometry->updateMarkers(markers_, transformations_by_index_[l_i] * (*c_it)->origin);
+			if ( (transformations_by_index_[l_i] * (*c_it)->origin).p.Norm() < 0.001)
+			{
+				std::cout << "wrong transformation: " << l_i << std::endl;
+				stop();
+			}
 		}
-	}
-
-	if (distances_count > 0)
-	{
-//		RTT::log(RTT::Info) << "distances: " << distances_count << std::endl;
 	}
 
 	// update distance markers
@@ -419,44 +575,12 @@ void SelfCollisionAvoidance::updateHook() {
 	}
 
 	markers_out_.write(markers_);
+//	for (int i=0; i<convex_hull_vector_.size(); i++)
+//	{
+//		qhull_points_out_[i]->write(qhull_points_[i]);
+//	}
 
-
-
-/*  if (port_trajectory_.read(trajectory_) == RTT::NewData) {
-    trajectory_ptr_ = 0;
-    old_point_ = setpoint_;
-    last_point_not_set_ = true;
-    trajectory_active_ = true;
-  //  std::cout << std::endl<< "CartesianInterpolator new trj" << std::endl<< std::endl<< std::endl;
-  }
-  //std::cout << "CartesianInterpolator" << std::endl;
-  ros::Time now = rtt_rosclock::host_now();
-  if (trajectory_active_ && trajectory_ && (trajectory_->header.stamp < now)) {
-    for (; trajectory_ptr_ < trajectory_->points.size(); trajectory_ptr_++) {
-      ros::Time trj_time = trajectory_->header.stamp
-          + trajectory_->points[trajectory_ptr_].time_from_start;
-      if (trj_time > now) {
-        break;
-      }
-    }
-
-    if (trajectory_ptr_ < trajectory_->points.size()) {
-      if (trajectory_ptr_ == 0) {
-        cartesian_trajectory_msgs::CartesianTrajectoryPoint p0;
-        p0.time_from_start.fromSec(0.0);
-        p0.pose = old_point_;
-        setpoint_ = interpolate(p0, trajectory_->points[trajectory_ptr_], now);
-      } else {
-        setpoint_ = interpolate(trajectory_->points[trajectory_ptr_ - 1],
-                                trajectory_->points[trajectory_ptr_], now);
-      }
-    } else if (last_point_not_set_) {
-      setpoint_ = trajectory_->points[trajectory_->points.size() - 1].pose;
-      last_point_not_set_ = false;
-    }
-  }
-  port_cartesian_command_.write(setpoint_);
-*/
+	qhull_points_out_2_.write(qhull_points_2_);
 }
 
 ORO_CREATE_COMPONENT(SelfCollisionAvoidance)

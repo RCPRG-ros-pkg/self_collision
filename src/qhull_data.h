@@ -34,20 +34,41 @@
 
 /** \author Dawid Seredynski */
 
-#ifndef QHULL_INTERFACE_H
-#define QHULL_INTERFACE_H
+#ifndef QHULL_DATA_H_
+#define QHULL_DATA_H_
 
 #include <kdl/frames.hpp>
 
-typedef struct
+class QhullData
 {
-	int i[20];
-	int count;
-} Face;
+public:
+	enum {MAX_POINTS=30};
+	enum {MAX_POLYGON_DATA_LENGTH=MAX_POINTS*6};
+	QhullData();
+	QhullData(const QhullData &q);
+	~QhullData();
+	QhullData &operator=(const QhullData &q);
 
-void initQhull();
-void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> &v_out, std::vector<Face> &f_out);
+	KDL::Vector points[MAX_POINTS];
+	int num_points;
 
-#endif	// QHULL_INTERFACE_H
+	int polygons[MAX_POLYGON_DATA_LENGTH];
+	int num_planes;
 
+	bool error;
+};
+
+class PointsSet
+{
+public:
+	PointsSet();
+	PointsSet(const PointsSet &q);
+	~PointsSet();
+	PointsSet &operator=(const PointsSet &q);
+
+	KDL::Vector points[QhullData::MAX_POINTS];
+	int num_points;
+};
+
+#endif	// QHULL_DATA_H_
 

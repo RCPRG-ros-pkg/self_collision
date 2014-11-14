@@ -34,8 +34,13 @@
 
 /** \author Jia Pan */
 
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
+
 #include "narrowphase.h"
-//#include "fcl/shape/geometric_shapes_utility.h"
 #include "intersect.h"
 #include <boost/math/constants/constants.hpp>
 #include <vector>

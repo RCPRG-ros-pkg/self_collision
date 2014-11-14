@@ -21,8 +21,10 @@
   <build_depend>std_msgs</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>visualization_msgs</build_depend>
+  <build_depend>shape_msgs</build_depend>
   <build_depend>kdl_parser</build_depend>
   <build_depend>urdf</build_depend>
+  <build_depend>qhull_msgs</build_depend>
 
   <run_depend>rtt</run_depend>
   <run_depend>ocl</run_depend>
@@ -34,8 +36,10 @@
   <run_depend>std_msgs</run_depend>
   <run_depend>sensor_msgs</run_depend>
   <run_depend>visualization_msgs</run_depend>
+  <run_depend>shape_msgs</run_depend>
   <run_depend>kdl_parser</run_depend>
   <run_depend>urdf</run_depend>
+  <run_depend>qhull_msgs</run_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

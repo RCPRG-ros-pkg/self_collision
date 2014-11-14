@@ -34,20 +34,44 @@
 
 /** \author Dawid Seredynski */
 
-#ifndef QHULL_INTERFACE_H
-#define QHULL_INTERFACE_H
+#ifndef QHULL_CALCULATOR_H_
+#define QHULL_CALCULATOR_H_
 
-#include <kdl/frames.hpp>
+#include <string>
 
-typedef struct
-{
-	int i[20];
-	int count;
-} Face;
+#include "rtt/TaskContext.hpp"
+#include "rtt/Port.hpp"
 
-void initQhull();
-void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> &v_out, std::vector<Face> &f_out);
+#include "qhull_data.h"
 
-#endif	// QHULL_INTERFACE_H
+extern "C" {
+#include <libqhull/qset.h>
+#include <libqhull/libqhull.h>
+}
 
+
+class QhullCalculator: public RTT::TaskContext {
+public:
+	explicit QhullCalculator(const std::string& name);
+	virtual ~QhullCalculator();
+	virtual bool configureHook();
+	virtual void cleanupHook();
+	virtual bool startHook();
+	virtual void updateHook();
+
+private:
+
+	coordT *points_;
+	int *face_i_;
+	int face_count_;
+	char qhull_command_[256];
+
+	RTT::OutputPort<QhullData> qhull_data_out_;
+	QhullData qhull_data_;
+
+	RTT::InputPort<PointsSet> qhull_points_in_;
+	PointsSet qhull_points_;
+};
+
+#endif	// QHULL_CALCULATOR_H_
 

@@ -34,128 +34,146 @@
 
 /** \author Dawid Seredynski */
 
-#include "ros/ros.h"
+#include "qhull_calculator.h"
+#include "rtt/Component.hpp"
 
-#include <iostream>
-
-#ifdef __cplusplus
-extern "C" {
-#include <libqhull/qset.h>
-#include <libqhull/libqhull.h>
-}
-#else
-#include <libqhull/qset.h>
-#include <libqhull/libqhull.h>
-#endif
-
-#include "qhull_interface.h"
-
-void initQhull()
+QhullCalculator::QhullCalculator(const std::string& name) :
+	RTT::TaskContext(name)
 {
-	static bool initialized = false;
+	this->ports()->addPort("QhullDataOut", qhull_data_out_);
+	this->ports()->addPort("QhullPointsIn", qhull_points_in_);
+}
 
-	if (initialized)
-	{
-//		ROS_ERROR("initQhull: already initialized");
-//		return;
-	}
+QhullCalculator::~QhullCalculator() {
+}
 
-	initialized = true;
+bool QhullCalculator::configureHook() {
+	char qhull_command_const[] = "Qt i";
+	memcpy(qhull_command_, qhull_command_const, strlen(qhull_command_const) + 1);
 
-	static FILE *null_sink = fopen("/dev/null", "w");
+	face_i_ = new int[QhullData::MAX_POINTS];
 
-	static char qhull_command_const[] = "Qt i";
-	static char qhull_command[256];
-	memcpy(qhull_command, qhull_command_const, strlen(qhull_command_const) + 1);
-
+	//
+	// initialize qhull
+	//
+//	static FILE *null_sink = fopen("/dev/null", "w");
 //	qh_init_A(NULL, null_sink, null_sink, 0, NULL);
 	qh_init_A(NULL, stdout, stdout, 0, NULL);
-	qh_initflags( qhull_command );
+	qh_initflags( qhull_command_ );
 }
 
-void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> &v_out, std::vector<Face> &f_out)
-{
-	// initialize points
-	static coordT points[100 * 3];
-	int counter = 0;
-	for (std::vector<KDL::Vector>::const_iterator it = v.begin(); it != v.end(); it++)
+void QhullCalculator::cleanupHook() {
+	delete[] face_i_;
+	qh_freeqhull( True);
+}
+
+bool QhullCalculator::startHook() {
+	return true;
+}
+
+void QhullCalculator::updateHook() {
+	qhull_points_in_.read(qhull_points_);
+
+
+	qhull_data_.num_points = 0;
+	qhull_data_.num_planes = 0;
+	qhull_data_.error = false;
+
+	if (qhull_points_.num_points < 4)
 	{
-		points[counter++] = it->x();
-		points[counter++] = it->y();
-		points[counter++] = it->z();
+		qhull_data_.error = true;
+		return;
 	}
 
-	qh_init_B(points, v.size(), 3, false);
+
+
+	//
+	// run qhull
+	//
+
+	// points_ are going to be free'd in qh_freebuffers
+	points_ = new coordT[3 * QhullData::MAX_POINTS];
+
+	// initialize points
+	for (int i=0; i<qhull_points_.num_points; i++)
+	{
+		points_[i*3+0] = qhull_points_.points[i].x();
+		points_[i*3+1] = qhull_points_.points[i].y();
+		points_[i*3+2] = qhull_points_.points[i].z();
+	}
+
+	qh_init_B(points_, qhull_points_.num_points, 3, True);
 	qh_qhull();
 
-	int faces_count = qh num_facets;
-	int vertices_count = qh num_vertices;
-//	ROS_INFO("qhull test: vertices: %d  faces: %d", vertices_count, faces_count);
-
 	std::map<int, int> v_id_map;
-	int v_id = 0;
-	v_out.clear();
-	v_out.resize(vertices_count);
 	for (vertexT *v = qh vertex_list; v != qh vertex_tail; v = v->next)
 	{
-//		ROS_INFO("%d", v->id);
-		v_id_map[v->id] = v_id;
-		v_out[v_id] = KDL::Vector(v->point[0], v->point[1], v->point[2]);
-		v_id++;
+		v_id_map[v->id] = qhull_data_.num_points;
+		qhull_data_.points[qhull_data_.num_points] = KDL::Vector(v->point[0], v->point[1], v->point[2]);
+		qhull_data_.num_points++;
 	}
 
-	f_out.clear();
-	int f_id = 0;
+	int polygons_idx = 0;
 	for (facetT *f = qh facet_list; f != qh facet_tail; f = f->next)
 	{
-		Face face;
-
-//		std::cout << "FACE" << std::endl;
-//		std::cout << "vertices2: ";
 		for (int v_idx=0; v_idx < f->vertices->maxsize; v_idx++)
 		{
 			if (f->vertices->e[v_idx].p == NULL)
 				break;
 			vertexT *v = static_cast<vertexT *>(f->vertices->e[v_idx].p);
 
-//			std::cout << v->id << " ";
-			if (v_idx >= 20)
+			if (v_idx >= QhullData::MAX_POINTS)
 			{
-				ROS_ERROR("v_idx >= 20");
+				std::cout << "v_idx >= QhullData::MAX_POINTS" << std::endl;
+				qhull_data_.error = true;
 				break;
 			}
 			if (v_id_map.find(v->id) == v_id_map.end())
 			{
-				ROS_ERROR("v_id in polygon is not in vertex list");
+				std::cout << "v_id in polygon is not in vertex list" << std::endl;
+				qhull_data_.error = true;
+				break;
 			}
-			face.i[v_idx] = v_id_map[v->id];
-			face.count = v_idx+1;
+			face_i_[v_idx] = v_id_map[v->id];
+			face_count_ = v_idx+1;
 		}
-//		std::cout << std::endl;
 
-		if (face.count < 3)
+		if (face_count_ < 3)
 		{
-			ROS_ERROR("degenerated facet: %d", face.count);
+			std::cout << "degenerated facet: " << face_count_ << std::endl;
+			qhull_data_.error = true;
 			continue;
+		}
+		if (qhull_data_.error)
+		{
+			break;
 		}
 
 		// triangle facet is reliable
-		if (face.count == 3)
+		if (face_count_ == 3)
 		{
-			f_out.push_back(face);
-			f_id++;
+			if (polygons_idx+3 >= QhullData::MAX_POLYGON_DATA_LENGTH)
+			{
+				qhull_data_.error = true;
+				break;
+			}
+			qhull_data_.polygons[polygons_idx++] = face_count_;
+			qhull_data_.polygons[polygons_idx++] = face_i_[0];
+			qhull_data_.polygons[polygons_idx++] = face_i_[1];
+			qhull_data_.polygons[polygons_idx++] = face_i_[2];
+			qhull_data_.num_planes++;
 			continue;
 		}
 
 		// the facet has more than 3 vertices - we must get edges to construct proper polygon
-		face.count = 0;
+		face_count_ = 0;
 
 		std::multimap<int, int> ridges_map;
 		// get the ridges
-//		std::cout << "ridges: ";
 		if (f->ridges == NULL)
 		{
-//			std::cout << "NULL" << std::endl;
+			qhull_data_.error = true;
+			break;
 		}
 		else
 		{
@@ -164,7 +182,6 @@ void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> 
 				if (f->ridges->e[r_idx].p == NULL)
 					break;
 				ridgeT *r = static_cast<ridgeT *>(f->ridges->e[r_idx].p);
-//				std::cout << "vertices: ";
 				if (r->vertices == NULL)
 				{
 //					std::cout << "NULL" << std::endl;
@@ -179,15 +196,16 @@ void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> 
 						vertexT *v = static_cast<vertexT *>(r->vertices->e[v_idx].p);
 						if (v_idx > 1)
 						{
-							ROS_ERROR("ridge has over 2 vertices");
+							std::cout << "ridge has over 2 vertices" << std::endl;
 							break;
 						}
 						ridge[v_idx] = v->id;
-//						std::cout << v->id << " ";
 					}
 					if (ridge[0] == -1 || ridge[1] == -1)
 					{
-						ROS_ERROR("wrong ridge: %d %d", ridge[0], ridge[1]);
+						qhull_data_.error = true;
+						std::cout << "wrong ridge: " << ridge[0] << " " << ridge[1] << std::endl;
+						break;
 					}
 					else
 					{
@@ -196,7 +214,6 @@ void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> 
 					}
 				}
 			}
-//			std::cout << std::endl;
 		}
 
 		int init_v_id = ridges_map.begin()->first;
@@ -204,12 +221,10 @@ void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> 
 		int v_id = init_v_id;
 		int v_idx = 0;
 
-//		std::cout << "vertices: ";
 		while (true)
 		{
-//			std::cout << "v_id:" << v_id << " prev_id:" << v_id_prev << " ";
-			face.i[v_idx] = v_id_map[v_id];
-			face.count = v_idx+1;
+			face_i_[v_idx] = v_id_map[v_id];
+			face_count_ = v_idx+1;
 			v_idx++;
 			std::pair<std::multimap<int, int>::iterator, std::multimap<int, int>::iterator> range = ridges_map.equal_range(v_id);
 			for (std::multimap<int, int>::iterator it = range.first; it != range.second; it++)
@@ -223,26 +238,35 @@ void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> 
 			}
 			if (v_id == init_v_id)
 				break;
-			if (v_idx >= 20)
+			if (v_idx >= QhullData::MAX_POINTS)
 			{
-				ROS_ERROR("too many vertices in one polygon");
+				qhull_data_.error = true;
+				std::cout << "too many vertices in one polygon" << std::endl;
 				break;
 			}
 		}
-//		std::cout << std::endl;
-		
-		f_out.push_back(face);
-		f_id++;
-	}
-//	ROS_INFO("f_out: %ld", f_out.size());
-//	ROS_INFO("v_out: %ld", v_out.size());
-	qh_freebuffers();
-	qh_freeqhull( False);
 
-	int curlong, totlong; /* used !qh_NOmem */
+		qhull_data_.polygons[polygons_idx++] = face_count_;
+		for (int face_i_idx=0; face_i_idx<face_count_; face_i_idx++)
+		{
+			qhull_data_.polygons[polygons_idx++] = face_i_[face_i_idx];
+		}
+		qhull_data_.num_planes++;
+	}
+
+	//
+	// free qhull
+	//
+	qh_freebuffers();
+
+	int curlong, totlong;
 	qh_memfreeshort(&curlong, &totlong);
 	if (curlong || totlong)
-		ROS_ERROR("qhull internal warning (main): did not free %d bytes of long memory(%d pieces)\n", totlong, curlong);
+		std::cout << "qhull internal warning (main): did not free " << totlong << " bytes of long memory(" << curlong << " pieces)\n" << std::endl;
+
+
+	qhull_data_out_.write(qhull_data_);
 }
 
+ORO_CREATE_COMPONENT(QhullCalculator)
 

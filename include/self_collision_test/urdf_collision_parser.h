@@ -1,3 +1,39 @@
+/*
+ * Software License Agreement (BSD License)
+ *
+ *  Copyright (c) 2011, Willow Garage, Inc.
+ *  All rights reserved.
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
+ *  are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above
+ *     copyright notice, this list of conditions and the following
+ *     disclaimer in the documentation and/or other materials provided
+ *     with the distribution.
+ *   * Neither the name of Willow Garage, Inc. nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ *  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ *  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ *  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ *  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/** \author Dawid Seredynski */
+
 #ifndef URDF_COLLISION_PARSER_H
 #define URDF_COLLISION_PARSER_H
 
@@ -5,9 +41,13 @@
 #include <kdl/frames.hpp>
 #include <kdl/tree.hpp>
 #include <tinyxml.h>
-#include "narrowphase.h"
-#include "qhull_interface.h"
-#include "marker_publisher.h"
+#include "visualization_msgs/MarkerArray.h"
+
+namespace fcl_2
+{
+class ShapeBase;
+class GJKSolver_indep;
+}
 
 namespace self_collision
 {
@@ -21,7 +61,7 @@ public:
 	Geometry(int type);
 	virtual void clear() = 0;
 	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array) = 0;
-	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr) = 0;
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr) = 0;
 	int marker_id_;
 private:
 };
@@ -34,7 +74,7 @@ public:
 	double length;
 	virtual void clear();
 	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array);
-	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr);
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr);
 private:
 };
 
@@ -43,7 +83,7 @@ class Convex : public Geometry
 public:
 	Convex();
 	~Convex();
-	void updateConvex(const std::vector<KDL::Vector> &v, const std::vector<Face> &f);
+	void updateConvex(int num_points, const std::vector<geometry_msgs::Point> &points, int num_planes, const std::vector<int> &polygons);
 
 	typedef std::vector<std::pair<std::string, KDL::Vector> > ConvexPointsStrVector;
 	typedef std::vector<std::pair<int, KDL::Vector> > ConvexPointsIdVector;
@@ -53,7 +93,7 @@ public:
 	double radius_;
 	virtual void clear();
 	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array);
-	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr);
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr);
 private:
 };
 

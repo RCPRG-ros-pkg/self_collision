@@ -34,13 +34,17 @@
 
 /** \author Jia Pan */
 
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
 
 #ifndef FCL_COLLISION_OBJECT_BASE_H
 #define FCL_COLLISION_OBJECT_BASE_H
 
 #include "AABB.h"
 #include "transform.h"
-//#include "motion_base.h"
 #include <boost/shared_ptr.hpp>
 
 namespace fcl_2

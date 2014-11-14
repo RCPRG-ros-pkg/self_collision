@@ -34,10 +34,15 @@
 
 /** \author Jia Pan */
 
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
+
 #ifndef FCL_VEC_3F_H
 #define FCL_VEC_3F_H
 
-//#include "config.h"
 #include "data_types.h"
 #include "math_details.h"
 

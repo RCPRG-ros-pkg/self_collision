@@ -1,8 +1,45 @@
+/*
+ * Software License Agreement (BSD License)
+ *
+ *  Copyright (c) 2011, Willow Garage, Inc.
+ *  All rights reserved.
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
+ *  are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above
+ *     copyright notice, this list of conditions and the following
+ *     disclaimer in the documentation and/or other materials provided
+ *     with the distribution.
+ *   * Neither the name of Willow Garage, Inc. nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ *  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ *  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ *  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ *  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/** \author Dawid Seredynski */
+
 #include "ros/ros.h"
-#include "urdf_collision_parser.h"
+#include "self_collision_test/urdf_collision_parser.h"
 #include "urdf/model.h"
 #include <kdl/frames.hpp>
 #include <tinyxml.h>
+#include "narrowphase.h"
 
 namespace self_collision
 {
@@ -50,19 +87,42 @@ void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker.color.b = 0.0;
 	marker_array.markers.push_back(marker);
 
-	visualization_msgs::Marker marker2(marker);
-	marker2.id = marker_id_+1;
+	visualization_msgs::Marker marker2;
+	marker2.header.frame_id = "world";
+	marker2.ns = "default";
+	marker2.id = marker_id_ + 1;
+	marker2.type = visualization_msgs::Marker::SPHERE;
+	marker2.action = visualization_msgs::Marker::ADD;
+	marker2.scale.x = ob->radius * 2.0;
+	marker2.scale.y = ob->radius * 2.0;
+	marker2.scale.z = ob->radius * 2.0;
+	marker2.color.a = 0.5;
+	marker2.color.r = 0.0;
+	marker2.color.g = 1.0;
+	marker2.color.b = 0.0;
 	marker_array.markers.push_back(marker2);
 
-	visualization_msgs::Marker marker3(marker);
+	visualization_msgs::Marker marker3;
+	marker3.header.frame_id = "world";
+	marker3.ns = "default";
 	marker3.id = marker_id_+2;
 	marker3.type = visualization_msgs::Marker::CYLINDER;
+	marker3.action = visualization_msgs::Marker::ADD;
+	marker3.scale.x = ob->radius * 2.0;
+	marker3.scale.y = ob->radius * 2.0;
 	marker3.scale.z = ob->lz;
+	marker3.color.a = 0.5;
+	marker3.color.r = 0.0;
+	marker3.color.g = 1.0;
+	marker3.color.b = 0.0;
 	marker_array.markers.push_back(marker3);
 
-	visualization_msgs::Marker marker4(marker);
+	visualization_msgs::Marker marker4;
+	marker4.header.frame_id = "world";
+	marker4.ns = "default";
 	marker4.id = marker_id_+3;
 	marker4.type = visualization_msgs::Marker::SPHERE;
+	marker4.action = visualization_msgs::Marker::ADD;
 	marker4.scale.x = 0.01;
 	marker4.scale.y = 0.01;
 	marker4.scale.z = 0.01;
@@ -73,7 +133,7 @@ void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker_array.markers.push_back(marker4);
 }
 
-void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr)
+void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr)
 {
 	const fcl_2::Capsule* ob = static_cast<const fcl_2::Capsule*>(shape.get());
 
@@ -82,6 +142,17 @@ void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const
 	KDL::Vector v(0,0,ob->lz);
 	KDL::Vector v2 = (fr * v) - (fr * KDL::Vector());
 
+	if (marker_id_+3 >= marker_array.markers.size())
+	{
+		std::cout<<"Capsule::updateMarkers ERROR!"<<std::endl;
+		*((int*)NULL) = 1;
+	}
+
+	if (marker_array.markers[marker_id_].id != marker_id_)
+	{
+		std::cout<<"Capsule::updateMarkers ERROR!"<<std::endl;
+		*((int*)NULL) = 1;
+	}
 	marker_array.markers[marker_id_].header.stamp = ros::Time();
 	marker_array.markers[marker_id_].pose.position.x = fr.p.x() - v2.x()/2.0;
 	marker_array.markers[marker_id_].pose.position.y = fr.p.y() - v2.y()/2.0;
@@ -91,6 +162,20 @@ void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const
 	marker_array.markers[marker_id_].pose.orientation.z = qz;
 	marker_array.markers[marker_id_].pose.orientation.w = qw;
 
+	if (marker_array.markers[marker_id_+1].id != marker_id_+1)
+	{
+		std::cout<<"Capsule::updateMarkers ERROR!"<<std::endl;
+		*((int*)NULL) = 1;
+	}
+	if (marker_array.markers[marker_id_+2].id != marker_id_+2)
+	{
+		std::cout<<"Capsule::updateMarkers ERROR!"<<std::endl;
+	}
+	if (marker_array.markers[marker_id_+3].id != marker_id_+3)
+	{
+		std::cout<<"Capsule::updateMarkers ERROR!"<<std::endl;
+		*((int*)NULL) = 1;
+	}
 	marker_array.markers[marker_id_+1].header.stamp = ros::Time();
 	marker_array.markers[marker_id_+1].pose.position.x = fr.p.x() + v2.x()/2.0;
 	marker_array.markers[marker_id_+1].pose.position.y = fr.p.y() + v2.y()/2.0;
@@ -143,28 +228,27 @@ Convex::~Convex()
 	conv->points = NULL;
 }
 
-void Convex::updateConvex(const std::vector<KDL::Vector> &v, const std::vector<Face> &f)
+void Convex::updateConvex(int num_points, const std::vector<geometry_msgs::Point> &points, int num_planes, const std::vector<int> &polygons)
 {
 	fcl_2::Convex *conv = static_cast<fcl_2::Convex*>(shape.get());
-	int poly_counter = 0;
-	for (std::vector<Face>::const_iterator it = f.begin(); it != f.end(); it++)
+	int polygons_idx = 0;
+	for (int f_idx=0; f_idx<num_planes; f_idx++)
 	{
-		conv->polygons[poly_counter++] = it->count;
-		for (int i=0; i<it->count; i++)
-		{
-			conv->polygons[poly_counter++] = it->i[i];
-		}
+		polygons_idx += polygons[polygons_idx] + 1;
+	}
+	for (int i=0; i<polygons_idx; ++i)
+	{
+		conv->polygons[i] = polygons[i];
 	}
 
-	conv->num_planes = f.size();
+	conv->num_planes = num_planes;
 
-	int points_counter = 0;
-	for (std::vector<KDL::Vector>::const_iterator it = v.begin(); it != v.end(); it++)
+	for (int p_idx=0; p_idx<num_points; p_idx++)
 	{
-		conv->points[points_counter++] = fcl_2::Vec3f(it->x(), it->y(), it->z());
+		conv->points[p_idx] = fcl_2::Vec3f(points[p_idx].x, points[p_idx].y, points[p_idx].z);
 	}
 
-	conv->num_points = v.size();
+	conv->num_points = num_points;
 	conv->fillEdges();
 }
 
@@ -176,18 +260,91 @@ void Convex::clear()
 
 void Convex::addMarkers(visualization_msgs::MarkerArray &marker_array)
 {
+	const fcl_2::Convex* ob = static_cast<const fcl_2::Convex*>(shape.get());
+
+	marker_id_ = 0;
+	if (marker_array.markers.size() > 0)
+	{
+		marker_id_ = marker_array.markers.back().id + 1;
+	}
+
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = "world";
+	marker.ns = "default";
+	marker.id = marker_id_;
+	marker.type = visualization_msgs::Marker::LINE_LIST;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.points.resize(500);
+	marker.scale.x = 0.005;
+	marker.color.a = 1.0;
+	marker.color.r = 0.0;
+	marker.color.g = 0.0;
+	marker.color.b = 1.0;
+	marker_array.markers.push_back(marker);
 }
 
-void Convex::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame fr)
-{
-}
-/*
-int Convex::publishMarker(ros::Publisher &pub, int m_id, const KDL::Frame tf)
+void Convex::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr)
 {
 	const fcl_2::Convex* ob = static_cast<const fcl_2::Convex*>(shape.get());
-//	m_id = publishMeshMarker(pub, m_id, tf, ob->points, ob->num_planes, ob->polygons, 0, 0, 1);
-	return m_id;
-}*/
+
+	double qx, qy, qz, qw;
+	fr.M.GetQuaternion(qx, qy, qz, qw);
+
+	const fcl_2::Vec3f *points = ob->points;
+	int num_planes = ob->num_planes;
+	const int *polygons = ob->polygons;
+
+	// edges
+	marker_array.markers[marker_id_].header.stamp = ros::Time();
+	marker_array.markers[marker_id_].pose.position.x = fr.p.x();
+	marker_array.markers[marker_id_].pose.position.y = fr.p.y();
+	marker_array.markers[marker_id_].pose.position.z = fr.p.z();
+	marker_array.markers[marker_id_].pose.orientation.x = qx;
+	marker_array.markers[marker_id_].pose.orientation.y = qy;
+	marker_array.markers[marker_id_].pose.orientation.z = qz;
+	marker_array.markers[marker_id_].pose.orientation.w = qw;
+	int pt_size = marker_array.markers[marker_id_].points.size();
+	int pt_idx = 0;
+	int poly_idx = 0;
+	for (int i=0; i<num_planes; i++)
+	{
+		int points_in_poly = polygons[poly_idx];
+		for (int j=0; j<points_in_poly; j++)
+		{
+			geometry_msgs::Point pt1;
+			pt1.x = points[polygons[poly_idx + 1 + j]][0];
+			pt1.y = points[polygons[poly_idx + 1 + j]][1];
+			pt1.z = points[polygons[poly_idx + 1 + j]][2];
+			marker_array.markers[marker_id_].points[pt_idx++] = pt1;
+			if (pt_idx >= pt_size)
+			{
+				break;
+			}
+
+			geometry_msgs::Point pt2;
+			pt2.x = points[polygons[poly_idx + 1 + (j+1)%points_in_poly]][0];
+			pt2.y = points[polygons[poly_idx + 1 + (j+1)%points_in_poly]][1];
+			pt2.z = points[polygons[poly_idx + 1 + (j+1)%points_in_poly]][2];
+			marker_array.markers[marker_id_].points[pt_idx++] = pt2;
+			if (pt_idx >= pt_size)
+			{
+				break;
+			}
+		}
+		if (pt_idx >= pt_size)
+		{
+			break;
+		}
+		poly_idx += points_in_poly+1;
+	}
+
+	for (; pt_idx<pt_size; pt_idx++)
+	{
+		marker_array.markers[marker_id_].points[pt_idx].x = 0;
+		marker_array.markers[marker_id_].points[pt_idx].y = 0;
+		marker_array.markers[marker_id_].points[pt_idx].z = 0;
+	}
+}
 
 void Collision::clear()
 {

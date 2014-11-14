@@ -34,13 +34,16 @@
 
 /** \author Jia Pan */
 
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
+
 #ifndef FCL_NARROWPHASE_H
 #define FCL_NARROWPHASE_H
 
 #include "gjk.h"
-//#include "fcl/narrowphase/gjk_libccd.h"
-
-
 
 namespace fcl_2
 {

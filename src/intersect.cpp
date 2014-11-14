@@ -34,6 +34,12 @@
 
 /** \author Jia Pan */
 
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
+
 #include "intersect.h"
 #include <iostream>
 #include <limits>

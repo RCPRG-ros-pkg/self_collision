@@ -16,6 +16,11 @@
     <env name="RTT_COMPONENT_PATH" value="$(arg RTT_COMPONENT_PATH)"/>
   </node>
 
+  <node
+    name="qhull_calculator"
+    pkg="qhull_calculator" type="qhull_calculator2"
+    output="screen"/>
+
   <group ns="self_collision_avoidance">
     <rosparam>
       SCA:

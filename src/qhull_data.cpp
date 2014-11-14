@@ -34,20 +34,54 @@
 
 /** \author Dawid Seredynski */
 
-#ifndef QHULL_INTERFACE_H
-#define QHULL_INTERFACE_H
+#include "qhull_data.h"
 
-#include <kdl/frames.hpp>
+#include <string.h>
 
-typedef struct
+QhullData::QhullData() :
+	num_points(0),
+	num_planes(0)
 {
-	int i[20];
-	int count;
-} Face;
+}
 
-void initQhull();
-void calculateQhull(const std::vector<KDL::Vector> &v, std::vector<KDL::Vector> &v_out, std::vector<Face> &f_out);
+QhullData::~QhullData()
+{
+}
 
-#endif	// QHULL_INTERFACE_H
+QhullData::QhullData(const QhullData &q) :
+	num_points(q.num_points),
+	num_planes(q.num_planes)
+{
+	memcpy(points, q.points, q.num_points * sizeof(KDL::Vector));
+	memcpy(polygons, q.polygons, q.num_planes * sizeof(int));
+}
 
+QhullData &QhullData::operator=(const QhullData &q)
+{
+	memcpy(points, q.points, q.num_points * sizeof(KDL::Vector));
+	num_points = q.num_points;
+	memcpy(polygons, q.polygons, sizeof(int) * MAX_POLYGON_DATA_LENGTH);
+	num_planes = q.num_planes;
+}
+
+PointsSet::PointsSet() :
+	num_points(0)
+{
+}
+
+PointsSet::~PointsSet()
+{
+}
+
+PointsSet::PointsSet(const PointsSet &q) :
+	num_points(q.num_points)
+{
+	memcpy(points, q.points, q.num_points * sizeof(KDL::Vector));
+}
+
+PointsSet &PointsSet::operator=(const PointsSet &q)
+{
+	memcpy(points, q.points, q.num_points * sizeof(KDL::Vector));
+	num_points = q.num_points;
+}
 

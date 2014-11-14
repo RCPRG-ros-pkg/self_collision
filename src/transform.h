@@ -34,6 +34,11 @@
 
 /** \author Jia Pan */
 
+/*
+This code is from fcl library with some modifications.
+Origin:
+https://github.com/flexible-collision-library/fcl
+*/
 
 #ifndef FCL_TRANSFORM_H
 #define FCL_TRANSFORM_H
