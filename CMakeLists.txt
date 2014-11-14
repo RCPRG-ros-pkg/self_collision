@@ -33,13 +33,9 @@ include_directories(${USE_OROCOS_INCLUDE_DIRS} include)
 ADD_DEFINITIONS(-DEIGEN_RUNTIME_NO_MALLOC)
 ### Orocos Targets ###
 
-#orocos_component(self_collision src/qhull_test.cpp src/urdf_collision_parser.cpp src/marker_publisher.cpp src/qhull_interface.cpp src/gjk.cpp src/transform.cpp src/intersect.cpp src/narrowphase.cpp src/geometric_shapes.cpp)
-#orocos_component(self_collision src/self_collision_avoidance.cpp src/urdf_collision_parser.cpp src/marker_publisher.cpp src/qhull_interface.cpp src/gjk.cpp src/transform.cpp src/intersect.cpp src/narrowphase.cpp src/geometric_shapes.cpp)
-orocos_component(self_collision src/self_collision_avoidance.cpp src/urdf_collision_parser.cpp src/gjk.cpp src/transform.cpp src/intersect.cpp src/narrowphase.cpp src/geometric_shapes.cpp src/qhull_data.cpp)
-orocos_component(qhull_calculator src/qhull_calculator.cpp src/qhull_interface.cpp src/qhull_data.cpp)
+orocos_component(self_collision src/self_collision_avoidance.cpp src/urdf_collision_parser.cpp src/gjk.cpp src/transform.cpp src/intersect.cpp src/narrowphase.cpp src/geometric_shapes.cpp)
 
 target_link_libraries(self_collision ${catkin_LIBRARIES} ${USE_OROCOS_LIBRARIES} ${orocos_kdl_LIBRARIES})
-target_link_libraries(qhull_calculator ${catkin_LIBRARIES} ${USE_OROCOS_LIBRARIES} ${orocos_kdl_LIBRARIES} qhull)
 add_dependencies(self_collision ${PROJECT_NAME}_gencpp)
 
 ### Orocos Package Exports and Install Targets ###

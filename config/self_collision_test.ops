@@ -33,31 +33,6 @@ stream("SCA.QhullPointsOut", ros.comm.topic("/qhull_points"));
 
 SCA.configure();
 
-//loadComponent("Qhull0", "QhullCalculator");
-//setActivity("Qhull0", 0.01, 6, ORO_SCHED_RT);
-
-//loadComponent("Qhull1", "QhullCalculator");
-//setActivity("Qhull1", 0.01, 6, ORO_SCHED_RT);
-
-//loadComponent("Qhull2", "QhullCalculator");
-//setActivity("Qhull2", 0.01, 6, ORO_SCHED_RT);
-
-//Qhull0.configure();
-//Qhull1.configure();
-//Qhull2.configure();
-
-//connect("SCA.QhullDataIn0", "Qhull0.QhullDataOut", ConnPolicy());
-//connect("SCA.QhullDataIn1", "Qhull1.QhullDataOut", ConnPolicy());
-//connect("SCA.QhullDataIn2", "Qhull2.QhullDataOut", ConnPolicy());
-
-//connect("SCA.QhullPointsOut0", "Qhull0.QhullPointsIn", ConnPolicy());
-//connect("SCA.QhullPointsOut1", "Qhull1.QhullPointsIn", ConnPolicy());
-//connect("SCA.QhullPointsOut2", "Qhull2.QhullPointsIn", ConnPolicy());
-
-//Qhull0.start();
-//Qhull1.start();
-//Qhull2.start();
-
 SCA.start();
 
 

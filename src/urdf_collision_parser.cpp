@@ -35,7 +35,7 @@
 /** \author Dawid Seredynski */
 
 #include "ros/ros.h"
-#include "self_collision_test/urdf_collision_parser.h"
+#include "self_collision/urdf_collision_parser.h"
 #include "urdf/model.h"
 #include <kdl/frames.hpp>
 #include <tinyxml.h>

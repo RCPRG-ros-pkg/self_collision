@@ -44,16 +44,10 @@
 
 #include "sensor_msgs/JointState.h"
 #include "visualization_msgs/MarkerArray.h"
-#include "self_collision_test/urdf_collision_parser.h"
+#include "self_collision/urdf_collision_parser.h"
 
-#include "qhull_data.h"
 #include "qhull_msgs/PointLists.h"
 #include "qhull_msgs/QhullList.h"
-
-//#include "cartesian_trajectory_msgs/CartesianTrajectory.h"
-//#include "geometry_msgs/Pose.h"
-
-//#include "Eigen/Dense"
 
 class Distance
 {
@@ -93,12 +87,6 @@ private:
 
 	RTT::OutputPort<visualization_msgs::MarkerArray> markers_out_;
 	visualization_msgs::MarkerArray markers_;
-
-	std::vector<RTT::InputPort<QhullData>* > qhull_data_in_;
-	std::vector<QhullData> qhull_data_;
-
-	std::vector<RTT::OutputPort<PointsSet>* > qhull_points_out_;
-	std::vector<PointsSet> qhull_points_;
 
 	RTT::OutputPort<qhull_msgs::PointLists> qhull_points_out_2_;
 	qhull_msgs::PointLists qhull_points_2_;

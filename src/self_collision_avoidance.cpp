@@ -295,27 +295,6 @@ bool SelfCollisionAvoidance::configureHook() {
 	}
 
 	//
-	// prepare ports for convex hull
-	//
-	qhull_data_in_.resize(convex_hull_vector_.size());
-	qhull_data_.resize(convex_hull_vector_.size());
-
-	qhull_points_out_.resize(convex_hull_vector_.size());
-	qhull_points_.resize(convex_hull_vector_.size());
-
-	for (int i=0; i<convex_hull_vector_.size(); i++)
-	{
-		char name[30];
-		snprintf(name, sizeof(name), "QhullDataIn%d", i);
-		qhull_data_in_[i] = new typeof(*qhull_data_in_[i]);
-		this->ports()->addPort(name, *qhull_data_in_[i]);
-
-		snprintf(name, sizeof(name), "QhullPointsOut%d", i);
-		qhull_points_out_[i] = new typeof(*qhull_points_out_[i]);
-		this->ports()->addPort(name, *qhull_points_out_[i]);
-	}
-
-	//
 	// prepare communication buffers
 	//
 	qhull_data_2_.qhulls.resize(convex_hull_vector_.size());
@@ -391,10 +370,6 @@ void SelfCollisionAvoidance::stopHook() {
 
 void SelfCollisionAvoidance::updateHook() {
 	joint_in_.read(joint_states_);
-//	for (int i=0; i<convex_hull_vector_.size(); i++)
-//	{
-//		qhull_data_in_[i]->read(qhull_data_[i]);
-//	}
 	if (joint_states_.name.size() != joints_count_)
 	{
 //		RTT::log(RTT::Error) << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
@@ -460,7 +435,6 @@ void SelfCollisionAvoidance::updateHook() {
 			KDL::Frame &T_B_L = transformations_by_index_[(*it)->parent_->index_];
 
 			qhull_points_2_.point_lists[convex_idx].num_points = 0;
-//			qhull_points_[convex_idx].num_points = 0;
 			for (self_collision::Convex::ConvexPointsIdVector::iterator pt_it = convex->points_id_.begin(); pt_it != convex->points_id_.end(); pt_it++)
 			{
 				KDL::Frame &T_B_F = transformations_by_index_[pt_it->first];
@@ -469,24 +443,21 @@ void SelfCollisionAvoidance::updateHook() {
 				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].x = pt.x();
 				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].y = pt.y();
 				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].z = pt.z();
-//				qhull_points_[convex_idx].points[ qhull_points_[convex_idx].num_points ] = T_E_F * pt_it->second;
 				qhull_points_2_.point_lists[convex_idx].num_points++;
-//				qhull_points_[convex_idx].num_points++;
 			}
 			
-//			convex->updateConvex(qhull_data_[convex_idx].num_points, qhull_data_[convex_idx].points, qhull_data_[convex_idx].num_planes, qhull_data_[convex_idx].polygons);
 			convex->updateConvex(qhull_data_2_.qhulls[convex_idx].num_points, qhull_data_2_.qhulls[convex_idx].points, qhull_data_2_.qhulls[convex_idx].num_planes, qhull_data_2_.qhulls[convex_idx].polygons);
 			KDL::Vector center;
-			for (int p_idx=0; p_idx<qhull_data_[convex_idx].num_points; p_idx++)
+			for (int p_idx=0; p_idx<qhull_data_2_.qhulls[convex_idx].num_points; p_idx++)
 			{
-				center += qhull_data_[convex_idx].points[p_idx];
+				center += KDL::Vector(qhull_data_2_.qhulls[convex_idx].points[p_idx].x, qhull_data_2_.qhulls[convex_idx].points[p_idx].y, qhull_data_2_.qhulls[convex_idx].points[p_idx].z);
 			}
-			center = 1.0/(double)qhull_data_[convex_idx].num_points * center;
+			center = 1.0/(double)qhull_data_2_.qhulls[convex_idx].num_points * center;
 
 			double radius = 0.0;
-			for (int p_idx=0; p_idx<qhull_data_[convex_idx].num_points; p_idx++)
+			for (int p_idx=0; p_idx<qhull_data_2_.qhulls[convex_idx].num_points; p_idx++)
 			{
-				double d = (qhull_data_[convex_idx].points[p_idx]-center).Norm();
+				double d = (KDL::Vector(qhull_data_2_.qhulls[convex_idx].points[p_idx].x, qhull_data_2_.qhulls[convex_idx].points[p_idx].y, qhull_data_2_.qhulls[convex_idx].points[p_idx].z)-center).Norm();
 				if (d > radius)
 				{
 					radius = d;
@@ -575,10 +546,7 @@ void SelfCollisionAvoidance::updateHook() {
 	}
 
 	markers_out_.write(markers_);
-//	for (int i=0; i<convex_hull_vector_.size(); i++)
-//	{
-//		qhull_points_out_[i]->write(qhull_points_[i]);
-//	}
+
 
 	qhull_points_out_2_.write(qhull_points_2_);
 }
