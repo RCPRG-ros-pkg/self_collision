@@ -315,6 +315,7 @@ bool SelfCollisionAvoidance::configureHook() {
 	}
 
 	qhull_points_out_.setDataSample(qhull_points_);
+	time_since_last_qhull_update_ = 1000;
 
 	// joint_states
 	joint_states_.name.resize(joints_count_);
@@ -549,11 +550,22 @@ void SelfCollisionAvoidance::updateHook() {
 				qhull_points_sent_.point_lists[i].points[p_idx] = qhull_points_.point_lists[i].points[p_idx];
 			}
 		}
+		time_since_last_qhull_update_ = 0;
+	}
+	if (time_since_last_qhull_update_ < 1000)
+	{
+		time_since_last_qhull_update_++;
 	}
 }
 
 bool SelfCollisionAvoidance::isQhullUpdateNeeded()
 {
+	// qhull update rate limit
+	if (time_since_last_qhull_update_ <= 10)
+	{
+		return false;
+	}
+
 	for (int convex_idx=0; convex_idx<qhull_data_.qhulls.size(); convex_idx++)
 	{	
 		if ( qhull_data_.qhulls[convex_idx].num_points < 4 )

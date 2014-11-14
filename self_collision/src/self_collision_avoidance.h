@@ -97,6 +97,7 @@ private:
 	RTT::InputPort<qhull_msgs::QhullList> qhull_data_in_;
 	qhull_msgs::QhullList qhull_data_;
 
+	// variables
 	int joints_count_;
 	KDL::Tree robot_tree_;
 	boost::shared_ptr<self_collision::CollisionModel> collision_model_;
@@ -107,6 +108,7 @@ private:
 	std::vector<Distance> distances;
 	self_collision::Link::VecPtrCollision convex_hull_vector_;
 	std::vector<bool> calculated_fk_;
+	int time_since_last_qhull_update_;
 
 	// properties
 	std::string prop_robot_description_;
