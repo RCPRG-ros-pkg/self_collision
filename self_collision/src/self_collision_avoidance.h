@@ -81,6 +81,8 @@ public:
 	virtual void updateHook();
 
 private:
+	bool isQhullUpdateNeeded();
+
 	// ports and buffers
 	RTT::InputPort<sensor_msgs::JointState> joint_in_;
 	sensor_msgs::JointState joint_states_;
@@ -88,11 +90,12 @@ private:
 	RTT::OutputPort<visualization_msgs::MarkerArray> markers_out_;
 	visualization_msgs::MarkerArray markers_;
 
-	RTT::OutputPort<qhull_msgs::PointLists> qhull_points_out_2_;
-	qhull_msgs::PointLists qhull_points_2_;
+	RTT::OutputPort<qhull_msgs::PointLists> qhull_points_out_;
+	qhull_msgs::PointLists qhull_points_;
+	qhull_msgs::PointLists qhull_points_sent_;
 
-	RTT::InputPort<qhull_msgs::QhullList> qhull_data_in_2_;
-	qhull_msgs::QhullList qhull_data_2_;
+	RTT::InputPort<qhull_msgs::QhullList> qhull_data_in_;
+	qhull_msgs::QhullList qhull_data_;
 
 	int joints_count_;
 	KDL::Tree robot_tree_;
@@ -103,30 +106,13 @@ private:
 	std::vector<int> fk_seq_;
 	std::vector<Distance> distances;
 	self_collision::Link::VecPtrCollision convex_hull_vector_;
+	std::vector<bool> calculated_fk_;
 
 	// properties
 	std::string prop_robot_description_;
 	std::string prop_robot_semantic_description_;
 	int prop_distances_count_;
 	double prop_d0_;
-
-	std::vector<bool> calculated_fk_;
-
-/*  RTT::InputPort<cartesian_trajectory_msgs::CartesianTrajectoryConstPtr > port_trajectory_;
-  RTT::InputPort<geometry_msgs::Pose > port_cartesian_position_;
-  RTT::OutputPort<geometry_msgs::Pose > port_cartesian_command_;
-
-  cartesian_trajectory_msgs::CartesianTrajectoryConstPtr trajectory_;
-  geometry_msgs::Pose setpoint_;
-  geometry_msgs::Pose old_point_;
-
-  size_t trajectory_ptr_;
-
-  bool activate_pose_init_property_;
-  geometry_msgs::Pose init_setpoint_property_;
-
-  bool last_point_not_set_;
-  bool trajectory_active_;*/
 };
 
 #endif	// SELF_COLLISION_AVOIDANCE_H_

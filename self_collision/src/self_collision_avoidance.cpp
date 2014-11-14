@@ -151,8 +151,8 @@ SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	this->ports()->addPort("dbg_joint_states", joint_in_);
 	this->ports()->addPort("dbg_markers", markers_out_);
 
-	this->ports()->addPort("QhullDataIn", qhull_data_in_2_);
-	this->ports()->addPort("QhullPointsOut", qhull_points_out_2_);
+	this->ports()->addPort("QhullDataIn", qhull_data_in_);
+	this->ports()->addPort("QhullPointsOut", qhull_points_out_);
 }
 
 SelfCollisionAvoidance::~SelfCollisionAvoidance() {
@@ -297,20 +297,24 @@ bool SelfCollisionAvoidance::configureHook() {
 	//
 	// prepare communication buffers
 	//
-	qhull_data_2_.qhulls.resize(convex_hull_vector_.size());
+	qhull_data_.qhulls.resize(convex_hull_vector_.size());
 	for (int i=0; i<convex_hull_vector_.size(); i++)
 	{
-		qhull_data_2_.qhulls[i].points.resize(40);
-		qhull_data_2_.qhulls[i].polygons.resize(40*6);
+		qhull_data_.qhulls[i].points.resize(40);
+		qhull_data_.qhulls[i].polygons.resize(40*6);
 	}
 
-	qhull_points_2_.point_lists.resize(convex_hull_vector_.size());
+	qhull_points_.point_lists.resize(convex_hull_vector_.size());
+	qhull_points_sent_.point_lists.resize(convex_hull_vector_.size());
 	for (int i=0; i<convex_hull_vector_.size(); i++)
 	{
-		qhull_points_2_.point_lists[i].points.resize(40);
+		qhull_points_.point_lists[i].points.resize(40);
+		qhull_points_.point_lists[i].num_points = 0;
+		qhull_points_sent_.point_lists[i].points.resize(40);
+		qhull_points_sent_.point_lists[i].num_points = 0;
 	}
 
-	qhull_points_out_2_.setDataSample(qhull_points_2_);
+	qhull_points_out_.setDataSample(qhull_points_);
 
 	// joint_states
 	joint_states_.name.resize(joints_count_);
@@ -348,24 +352,9 @@ bool SelfCollisionAvoidance::configureHook() {
 
 bool SelfCollisionAvoidance::startHook() {
 	return true;
-/*
-  if (activate_pose_init_property_) {
-    setpoint_ = init_setpoint_property_;
-  } else {
-    if (port_cartesian_position_.read(setpoint_) == RTT::NoData) {
-      return false;
-    }
-  }
-  last_point_not_set_ = false;
-  trajectory_active_ = false;
-  return true;*/
 }
 
 void SelfCollisionAvoidance::stopHook() {
-//	for (int i=0; i<markers_.markers.size(); i++)
-//	{
-//		std::cout << i << ": " << markers_.markers[i].pose.position.x << " " << markers_.markers[i].pose.position.y << " " << markers_.markers[i].pose.position.z << std::endl;		
-//	}
 }
 
 void SelfCollisionAvoidance::updateHook() {
@@ -378,7 +367,7 @@ void SelfCollisionAvoidance::updateHook() {
 		return;
 	}
 
-	qhull_data_in_2_.read(qhull_data_2_);
+	qhull_data_in_.read(qhull_data_);
 
 	// arrange the joint positions to their ids in the KDL tree
 	for (int i=0; i<joint_states_.name.size(); i++)
@@ -434,30 +423,30 @@ void SelfCollisionAvoidance::updateHook() {
 			self_collision::Convex* convex = static_cast<self_collision::Convex*>((*it)->geometry.get());
 			KDL::Frame &T_B_L = transformations_by_index_[(*it)->parent_->index_];
 
-			qhull_points_2_.point_lists[convex_idx].num_points = 0;
+			qhull_points_.point_lists[convex_idx].num_points = 0;
 			for (self_collision::Convex::ConvexPointsIdVector::iterator pt_it = convex->points_id_.begin(); pt_it != convex->points_id_.end(); pt_it++)
 			{
 				KDL::Frame &T_B_F = transformations_by_index_[pt_it->first];
 				KDL::Frame T_E_F = (T_B_L * (*it)->origin).Inverse() * T_B_F;
 				KDL::Vector pt = T_E_F * pt_it->second;
-				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].x = pt.x();
-				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].y = pt.y();
-				qhull_points_2_.point_lists[convex_idx].points[qhull_points_2_.point_lists[convex_idx].num_points].z = pt.z();
-				qhull_points_2_.point_lists[convex_idx].num_points++;
+				qhull_points_.point_lists[convex_idx].points[qhull_points_.point_lists[convex_idx].num_points].x = pt.x();
+				qhull_points_.point_lists[convex_idx].points[qhull_points_.point_lists[convex_idx].num_points].y = pt.y();
+				qhull_points_.point_lists[convex_idx].points[qhull_points_.point_lists[convex_idx].num_points].z = pt.z();
+				qhull_points_.point_lists[convex_idx].num_points++;
 			}
 			
-			convex->updateConvex(qhull_data_2_.qhulls[convex_idx].num_points, qhull_data_2_.qhulls[convex_idx].points, qhull_data_2_.qhulls[convex_idx].num_planes, qhull_data_2_.qhulls[convex_idx].polygons);
+			convex->updateConvex(qhull_data_.qhulls[convex_idx].num_points, qhull_data_.qhulls[convex_idx].points, qhull_data_.qhulls[convex_idx].num_planes, qhull_data_.qhulls[convex_idx].polygons);
 			KDL::Vector center;
-			for (int p_idx=0; p_idx<qhull_data_2_.qhulls[convex_idx].num_points; p_idx++)
+			for (int p_idx=0; p_idx<qhull_data_.qhulls[convex_idx].num_points; p_idx++)
 			{
-				center += KDL::Vector(qhull_data_2_.qhulls[convex_idx].points[p_idx].x, qhull_data_2_.qhulls[convex_idx].points[p_idx].y, qhull_data_2_.qhulls[convex_idx].points[p_idx].z);
+				center += KDL::Vector(qhull_data_.qhulls[convex_idx].points[p_idx].x, qhull_data_.qhulls[convex_idx].points[p_idx].y, qhull_data_.qhulls[convex_idx].points[p_idx].z);
 			}
-			center = 1.0/(double)qhull_data_2_.qhulls[convex_idx].num_points * center;
+			center = 1.0/(double)qhull_data_.qhulls[convex_idx].num_points * center;
 
 			double radius = 0.0;
-			for (int p_idx=0; p_idx<qhull_data_2_.qhulls[convex_idx].num_points; p_idx++)
+			for (int p_idx=0; p_idx<qhull_data_.qhulls[convex_idx].num_points; p_idx++)
 			{
-				double d = (KDL::Vector(qhull_data_2_.qhulls[convex_idx].points[p_idx].x, qhull_data_2_.qhulls[convex_idx].points[p_idx].y, qhull_data_2_.qhulls[convex_idx].points[p_idx].z)-center).Norm();
+				double d = (KDL::Vector(qhull_data_.qhulls[convex_idx].points[p_idx].x, qhull_data_.qhulls[convex_idx].points[p_idx].y, qhull_data_.qhulls[convex_idx].points[p_idx].z)-center).Norm();
 				if (d > radius)
 				{
 					radius = d;
@@ -547,8 +536,54 @@ void SelfCollisionAvoidance::updateHook() {
 
 	markers_out_.write(markers_);
 
+	if (isQhullUpdateNeeded())
+	{
+		// check if we want to send the qhull points
+		qhull_points_out_.write(qhull_points_);
 
-	qhull_points_out_2_.write(qhull_points_2_);
+		for (int i=0; i<qhull_points_.point_lists.size(); i++)
+		{
+			qhull_points_sent_.point_lists[i].num_points = qhull_points_.point_lists[i].num_points;
+			for (int p_idx=0; p_idx<qhull_points_.point_lists[i].num_points; p_idx++)
+			{
+				qhull_points_sent_.point_lists[i].points[p_idx] = qhull_points_.point_lists[i].points[p_idx];
+			}
+		}
+	}
+}
+
+bool SelfCollisionAvoidance::isQhullUpdateNeeded()
+{
+	for (int convex_idx=0; convex_idx<qhull_data_.qhulls.size(); convex_idx++)
+	{	
+		if ( qhull_data_.qhulls[convex_idx].num_points < 4 )
+		{
+			return true;
+		}
+	}
+
+	if (qhull_points_.point_lists.size() != qhull_points_sent_.point_lists.size())
+	{
+		return true;
+	}
+	for (int i=0; i<qhull_points_.point_lists.size(); i++)
+	{
+		if ( qhull_points_.point_lists[i].num_points != qhull_points_sent_.point_lists[i].num_points )
+		{
+			return true;
+		}
+		for (int p_idx=0; p_idx<qhull_points_.point_lists[i].num_points; p_idx++)
+		{
+			double dx = qhull_points_.point_lists[i].points[p_idx].x - qhull_points_sent_.point_lists[i].points[p_idx].x;
+			double dy = qhull_points_.point_lists[i].points[p_idx].y - qhull_points_sent_.point_lists[i].points[p_idx].y;
+			double dz = qhull_points_.point_lists[i].points[p_idx].z - qhull_points_sent_.point_lists[i].points[p_idx].z;
+			if ( dx > 0.001 || dx < -0.001 || dy > 0.001 || dy < -0.001 || dz > 0.001 || dz < -0.001)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 ORO_CREATE_COMPONENT(SelfCollisionAvoidance)

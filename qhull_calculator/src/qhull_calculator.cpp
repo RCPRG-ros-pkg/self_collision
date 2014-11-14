@@ -58,6 +58,8 @@ void caclulateQhull(int num_points_in, const std::vector<geometry_msgs::Point> &
 		return;
 	}
 
+	// TODO: vectors' range checks, check if there is memory leak and test for stability...
+
 	//
 	// initialize qhull
 	//
@@ -249,7 +251,6 @@ void caclulateQhull(int num_points_in, const std::vector<geometry_msgs::Point> &
 
 ros::Publisher pub;
 
-//void chatterCallback(const qhull_msgs::PointLists::ConstPtr& msg)
 void qhullCallback(const qhull_msgs::PointLists& msg)
 {
 //	ROS_INFO("msg.point_lists.size() == %ld", msg.point_lists.size());
@@ -268,77 +269,17 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, "qhull_calculator");
 	ros::NodeHandle n;
 
-//	std::string robot_description;
-//	std::string robot_semantic_description;
-
 	pub = n.advertise<qhull_msgs::QhullList>("/qhull", 10);
 
 	ros::Subscriber sub = n.subscribe("/qhull_points", 10, qhullCallback);
 
-//	n.getParam("/robot_description", robot_description);
-//	n.getParam("/robot_semantic_description", robot_semantic_description);
-
-//	boost::shared_ptr<self_collision::CollisionModel> collision_model_ = self_collision::CollisionModel::parseURDF(robot_description);
-//	collision_model_->parseSRDF(robot_semantic_description);
-/*
-	// create vector of convex hulls for quick update
-	// iterate through all links
-	for (int l_i = 0; l_i < collision_model_->link_count_; l_i++)
-	{
-		// iterate through collision objects
-		for (self_collision::Link::VecPtrCollision::const_iterator c_it = collision_model_->links_[l_i]->collision_array.begin(); c_it != collision_model_->links_[l_i]->collision_array.end(); c_it++)
-		{
-			if ((*c_it)->geometry->type == self_collision::Geometry::CONVEX)
-			{
-				convex_hull_vector_.push_back(*c_it);
-			}
-		}
-	}
-
-	tf2_ros::Buffer core;
-	tf2_ros::TransformListener listener(core);
-*/
-
-//	ros::Publisher chatter_pub = n.advertise<std_msgs::String>("chatter", 1000);
 	ros::Rate loop_rate(100);
 	while (ros::ok())
 	{
-/*		int convex_idx = 0;
-		for (self_collision::Link::VecPtrCollision::iterator it = convex_hull_vector_.begin(); it != convex_hull_vector_.end(); it++, convex_idx++)
-		{
-			self_collision::Convex* convex = static_cast<self_collision::Convex*>((*it)->geometry.get());
-			frame1_name = (*it)->parent_->name;
-			geometry_msgs::StampedTransform transform;
-			try{
-				core.lookupTransform("/world", "frame1_name", ros::Time(0), transform);
-			}
-			catch (tf::TransformException ex){
-				ROS_ERROR("%s",ex.what());
-			}
-			tf2::transformToKDL (const geometry_msgs::TransformStamped &t)
-			KDL::Frame T_B_L = transform;
-
-			std::vector<KDL::Vector> points;
-//			qhull_points_[convex_idx].num_points = 0;
-			for (self_collision::Convex::ConvexPointsIdVector::iterator pt_it = convex->points_id_.begin(); pt_it != convex->points_id_.end(); pt_it++)
-			{
-				collision_model_->links_[pt_it->first].name
-				KDL::Frame &T_B_F = ;
-				KDL::Frame T_E_F = (T_B_L * (*it)->origin).Inverse() * T_B_F;
-				points.push_back(T_E_F * pt_it->second);
-//				qhull_points_[convex_idx].points[ qhull_points_[convex_idx].num_points ] = T_E_F * pt_it->second;
-//				qhull_points_[convex_idx].num_points++;
-			}
-*/
-
-
-
-
-//    std_msgs::String msg;
-//    chatter_pub.publish(msg);
 		ros::spinOnce();
 		loop_rate.sleep();
 	}
 
 	return 0;
 }
+
