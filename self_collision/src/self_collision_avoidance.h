@@ -71,6 +71,9 @@ private:
 	bool isQhullUpdateNeeded();
 
 	// ports and buffers
+	RTT::InputPort<Eigen::VectorXd > port_ctrl_joint_in_;
+	Eigen::VectorXd ctrl_jnt_pos_;
+
 	RTT::InputPort<Eigen::VectorXd > port_joint_in_;
 	Eigen::VectorXd jnt_pos_;
 
@@ -101,12 +104,16 @@ private:
 	int time_since_last_qhull_update_;
 	std::vector<std::pair<std::string, boost::shared_ptr< urdf::JointMimic > > > mimic_joints_;
 
+	double Fmax_;
+	double Frep_mult_;
+
 	// properties
 	std::string prop_robot_description_;
 	std::string prop_robot_semantic_description_;
 	int prop_distances_count_;
 	double prop_d0_;
         std::vector<std::string> prop_joint_position_sequence_;
+        std::vector<std::string> prop_ctrl_joint_position_sequence_;
         std::vector<std::string> prop_ros_joint_states_names_;
 
 	// for test

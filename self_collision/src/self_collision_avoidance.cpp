@@ -48,9 +48,11 @@ SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	this->addProperty("distances_count", prop_distances_count_);
 	this->addProperty("d0", prop_d0_);
 	this->addProperty("joint_position_sequence", prop_joint_position_sequence_);
+	this->addProperty("ctrl_joint_position_sequence", prop_ctrl_joint_position_sequence_);
 	this->addProperty("ros_joint_states_names", prop_ros_joint_states_names_);
 
-	this->ports()->addPort("JointPosition", port_joint_in_);
+	this->ports()->addPort("JointPositionIn", port_joint_in_);
+	this->ports()->addPort("CtrlJointPositionIn", port_ctrl_joint_in_);
 	this->ports()->addPort("GripperJointPosition", port_gripper_joint_in_);
 
 	this->ports()->addPort("dbg_markers", markers_out_);
@@ -297,7 +299,7 @@ bool SelfCollisionAvoidance::configureHook() {
 //	joint_states_.effort.resize(joints_count_);
 
 	port_joint_in_.getDataSample(jnt_pos_);
-
+	RTT::log(RTT::Info) << "jnt_pos_.size(): " << jnt_pos_.size() << std::endl;
 	if (jnt_pos_.size() != prop_joint_position_sequence_.size())
 	{
 		RTT::log(RTT::Error) << "jnt_pos_.size() != prop_joint_position_sequence_.size(): " << jnt_pos_.size() << " != " << prop_joint_position_sequence_.size() << std::endl;
@@ -309,12 +311,23 @@ bool SelfCollisionAvoidance::configureHook() {
 		RTT::log(RTT::Info) << "joint_position_sequence: " << i << ": <" << prop_joint_position_sequence_[i] << ">" << std::endl;
 	}
 
+	port_ctrl_joint_in_.getDataSample(ctrl_jnt_pos_);
+	RTT::log(RTT::Info) << "ctrl_jnt_pos_.size(): " << ctrl_jnt_pos_.size() << std::endl;
+	if (ctrl_jnt_pos_.size() != prop_ctrl_joint_position_sequence_.size())
+	{
+		RTT::log(RTT::Error) << "ctrl_jnt_pos_.size() != prop_ctrl_joint_position_sequence_.size(): " << ctrl_jnt_pos_.size() << " != " << prop_ctrl_joint_position_sequence_.size() << std::endl;
+		return false;
+	}
+
+	for (int i=0; i<prop_ctrl_joint_position_sequence_.size(); i++)
+	{
+		RTT::log(RTT::Info) << "joint_position_sequence: " << i << ": <" << prop_ctrl_joint_position_sequence_[i] << ">" << std::endl;
+	}
+
 	gripper_joint_states_.name.resize(joints_count_);
 	gripper_joint_states_.position.resize(joints_count_);
 	gripper_joint_states_.velocity.resize(joints_count_);
 	gripper_joint_states_.effort.resize(joints_count_);
-
-	RTT::log(RTT::Info) << "jnt_pos_.size(): " << jnt_pos_.size() << std::endl;
 
 	// visualization
 	// draw all links' collision objects
@@ -340,7 +353,9 @@ bool SelfCollisionAvoidance::configureHook() {
 	RTT::log(RTT::Info) << "prop_distances_count_: " << prop_distances_count_ << std::endl;
 
 	calculated_fk_.resize(collision_model_->link_count_);
-	
+
+	Fmax_ = 10.0;
+	Frep_mult_ = Fmax_ / (prop_d0_ * prop_d0_);
 
 	// tests
 	test_jnt_idx_ = joint_name_2_index_map_["right_arm_3_joint"];
@@ -362,32 +377,21 @@ void SelfCollisionAvoidance::stopHook() {
 }
 
 void SelfCollisionAvoidance::updateHook() {
-/*	joint_in_.read(joint_states_);
-	if (joint_states_.name.size() != joints_count_)
-	{
-//		RTT::log(RTT::Error) << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
-		std::cout << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
-		stop();
-		return;
-	}
-*/
-
 	port_joint_in_.read(jnt_pos_);
-
 	for (int i=0; i<prop_joint_position_sequence_.size(); i++)
 	{
 		joint_positions_by_index_[ joint_name_2_index_map_[prop_joint_position_sequence_[i]] ] = jnt_pos_[i];
 	}
 
+	port_ctrl_joint_in_.read(ctrl_jnt_pos_);
+	for (int i=0; i<prop_ctrl_joint_position_sequence_.size(); i++)
+	{
+		joint_positions_by_index_[ joint_name_2_index_map_[prop_ctrl_joint_position_sequence_[i]] ] = ctrl_jnt_pos_[i];
+	}
+
 	port_gripper_joint_in_.read(gripper_joint_states_);
 
 	qhull_data_in_.read(qhull_data_);
-
-	// arrange the joint positions to their ids in the KDL tree
-//	for (int i=0; i<joint_states_.name.size(); i++)
-//	{
-//		joint_positions_by_index_[ joint_name_2_index_map_[joint_states_.name[i]] ] = joint_states_.position[i];
-//	}
 
 	for (int i=0; i<gripper_joint_states_.name.size(); i++)
 	{
@@ -424,8 +428,9 @@ void SelfCollisionAvoidance::updateHook() {
 
 		if (collision_model_->links_[l_i]->kdl_segment_->segment.getName() != collision_model_->links_[l_i]->name)
 		{
-			std::cout << "inconsistent KDL tree" << std::endl;
-			stop();
+			RTT::log(RTT::Error) << "Inconsistent KDL tree" << RTT::endlog();
+			error();
+			return;
 		}
 		if (parent_i == -1)
 		{
@@ -442,9 +447,8 @@ void SelfCollisionAvoidance::updateHook() {
 	{
 		if (!calculated_fk_[l_i])
 		{
-//			RTT::log(RTT::Error) << "could not calculate fk: " << l_i << std::endl;
-			std::cout << "could not calculate fk: " << l_i << std::endl;
-			stop();
+			RTT::log(RTT::Error) << "Could not calculate fk" << RTT::endlog();
+			error();
 			return;
 		}
 	}
@@ -518,21 +522,25 @@ void SelfCollisionAvoidance::updateHook() {
 
 				if (dist < 0.0)
 				{
-//					RTT::log(RTT::Error) << "collision: " << it->first << " " << it->second << " " << (*c_it1)->geometry->type << " " << (*c_it2)->geometry->type << " " << dist << std::endl;
+					RTT::log(RTT::Error) << "Collision detected" << RTT::endlog();
+					error();
+					return;
 				}
 				else if (dist < prop_d0_)
 				{
 					if (distances_count >= prop_distances_count_)
 					{
-//						RTT::log(RTT::Error) << "too many low distances" << std::endl;
+						RTT::log(RTT::Error) << "Too many collision pairs" << RTT::endlog();
+						error();
+						return;
 					}
 					else
 					{
 						distances[distances_count].i_ = it->first;
 						distances[distances_count].j_ = it->second;
 						distances[distances_count].d_ = dist;
-						distances[distances_count].xi_ = T_B_L1.Inverse() * d1;
-						distances[distances_count].xj_ = T_B_L1.Inverse() * d2;
+						distances[distances_count].xi_Ti_ = T_B_L1.Inverse() * d1;
+						distances[distances_count].xj_Tj_ = T_B_L2.Inverse() * d2;
 						distances_count++;
 					}
 				}
@@ -547,32 +555,52 @@ void SelfCollisionAvoidance::updateHook() {
 		KDL::Jacobian ji(collision_model_->link_count_);
 		KDL::Jacobian jj(collision_model_->link_count_);
 
-		int ret = JntToJac(ji, distances[i].i_, distances[i].xi_);
+		int ret = JntToJac(ji, distances[i].i_, distances[i].xi_Ti_);
 		if (ret != 0)
 		{
-			stop();
-			std::cout << "ERROR: JntToJac == " << ret <<std::endl;
+			RTT::log(RTT::Error) << "Jacobian calculation error" << RTT::endlog();
+			error();
+			return;
 		}
 
-		KDL::Vector p1 = transformations_by_index_[distances[i].i_] * distances[i].xi_;
+//		KDL::Vector xj = transformations_by_index_[distances[i].j_].Inverse() * transformations_by_index_[distances[i].i_] * distances[i].xj_;
+		ret = JntToJac(jj, distances[i].j_, distances[i].xj_Tj_);
+		if (ret != 0)
+		{
+			RTT::log(RTT::Error) << "Jacobian calculation error" << RTT::endlog();
+			error();
+			return;
+		}
+
+		// test: visualization
+		KDL::Vector p1 = transformations_by_index_[distances[i].i_] * distances[i].xi_Ti_;
 		KDL::Twist t1 = ji.getColumn(test_jnt_idx_) * (-0.5);
 		test_vec_[test_vec_idx].updateMarkers(markers_, p1, p1 + t1.vel);
 		test_vec_idx++;
 
-		KDL::Vector xj = transformations_by_index_[distances[i].j_].Inverse() * transformations_by_index_[distances[i].i_] * distances[i].xj_;
-		ret = JntToJac(jj, distances[i].j_, xj);
-		if (ret != 0)
-		{
-			stop();
-			std::cout << "ERROR: JntToJac == " << ret <<std::endl;
-		}
-		KDL::Vector p2 = transformations_by_index_[distances[i].j_] * xj;
+		KDL::Vector p2 = transformations_by_index_[distances[i].j_] * distances[i].xj_Tj_;
 		KDL::Twist t2 = jj.getColumn(test_jnt_idx_) * (-0.5);
 		test_vec_[test_vec_idx].updateMarkers(markers_, p2, p2 + t2.vel);
 		test_vec_idx++;
 
-//		distances[i].j_
-//		distances[i].xj_
+		// check if the distance returned from distance algorithm is equal to |p1-p2|
+		double d_ij = (p1-p2).Norm();
+		if (d_ij-distances[i].d_ > 0.0001 || d_ij-distances[i].d_ < -0.0001)
+		{
+			RTT::log(RTT::Error) << "ERROR: distances do not match: " << d_ij << " " << distances[i].d_ << RTT::endlog();
+			error();
+			return;
+		}
+
+		if (distances[i].d_ > prop_d0_)
+		{
+			RTT::log(RTT::Error) << "ERROR: distances is too big: " << distances[i].d_ << RTT::endlog();
+			error();
+			return;
+		}
+
+		double Frep_ij = Frep_mult_ * (distances[i].d_ - prop_d0_) * (distances[i].d_ - prop_d0_);
+
 	}
 	for (; test_vec_idx<test_vec_.size(); test_vec_idx++)
 	{
@@ -589,8 +617,9 @@ void SelfCollisionAvoidance::updateHook() {
 			(*c_it)->geometry->updateMarkers(markers_, transformations_by_index_[l_i] * (*c_it)->origin);
 			if ( (transformations_by_index_[l_i] * (*c_it)->origin).p.Norm() < 0.001)
 			{
-				std::cout << "wrong transformation: " << l_i << std::endl;
-				stop();
+				RTT::log(RTT::Error) << "wrong transformation: " << l_i << RTT::endlog();
+				error();
+				return;
 			}
 		}
 	}
@@ -602,10 +631,10 @@ void SelfCollisionAvoidance::updateHook() {
 		{
 			distances[i].i_ = 0;
 			distances[i].j_ = 0;
-			distances[i].xi_ = KDL::Vector();
-			distances[i].xj_ = KDL::Vector();
+			distances[i].xi_Ti_ = KDL::Vector();
+			distances[i].xj_Tj_ = KDL::Vector();
 		}
-		distances[i].updateMarkers(markers_, transformations_by_index_[distances[i].i_]);
+		distances[i].updateMarkers(markers_, transformations_by_index_[distances[i].i_], transformations_by_index_[distances[i].j_]);
 	}
 
 	markers_out_.write(markers_);

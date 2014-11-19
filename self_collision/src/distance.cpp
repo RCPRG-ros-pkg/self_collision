@@ -106,10 +106,10 @@ void Distance::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker_array.markers.push_back(marker3);
 }
 
-void Distance::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_i)
+void Distance::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_Ti, const KDL::Frame &T_B_Tj)
 {
-	KDL::Vector pos1 = T_B_i * xi_;
-	KDL::Vector pos2 = T_B_i * xj_;
+	KDL::Vector pos1 = T_B_Ti * xi_Ti_;
+	KDL::Vector pos2 = T_B_Tj * xj_Tj_;
 
 	marker_array.markers[marker_id_].header.stamp = ros::Time();
 	marker_array.markers[marker_id_].points.at(0).x = pos1.x();

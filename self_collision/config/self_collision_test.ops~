@@ -22,7 +22,6 @@ stream("VJS.ros_joint_states", ros.comm.topic("/joint_states"));
 VJS.configure();
 
 loadComponent("Ps", "VectorSplit2");
-setActivity("Ps", 0.01, 6, ORO_SCHED_RT);
 Ps.loadService("rosparam");
 Ps.rosparam.getAll();
 connect("VJS.VT_JointPosition", "Ps.In", ConnPolicy());

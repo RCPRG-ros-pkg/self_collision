@@ -50,15 +50,15 @@ public:
 	double d_;
 
 	// position of point at link i in frame i
-	KDL::Vector xi_;
+	KDL::Vector xi_Ti_;
 
 	// position of point at link j in frame i
-	KDL::Vector xj_;
+	KDL::Vector xj_Tj_;
 
 	int marker_id_;
 
 	void addMarkers(visualization_msgs::MarkerArray &marker_array);
-	void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_i);
+	void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_Ti, const KDL::Frame &T_B_Tj);
 
 };
 
