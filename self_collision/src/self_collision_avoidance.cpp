@@ -37,108 +37,7 @@
 #include "self_collision_avoidance.h"
 #include "rtt/Component.hpp"
 
-#include "urdf/model.h"
 #include <kdl_parser/kdl_parser.hpp>
-
-void Distance::addMarkers(visualization_msgs::MarkerArray &marker_array)
-{
-	marker_id_ = 0;
-	if (marker_array.markers.size() > 0)
-	{
-		marker_id_ = marker_array.markers.back().id + 1;
-	}
-
-	visualization_msgs::Marker marker;
-	marker.header.frame_id = "world";
-	marker.ns = "default";
-	marker.id = marker_id_;
-	marker.type = visualization_msgs::Marker::LINE_LIST;
-	marker.action = visualization_msgs::Marker::ADD;
-	marker.pose.position.x = 0;
-	marker.pose.position.y = 0;
-	marker.pose.position.z = 0;
-	marker.pose.orientation.x = 0.0;
-	marker.pose.orientation.y = 0.0;
-	marker.pose.orientation.z = 0.0;
-	marker.pose.orientation.w = 1.0;
-	marker.points.resize(2);
-	marker.scale.x = 0.01;
-	marker.scale.y = 0.01;
-	marker.scale.z = 0.01;
-	marker.color.a = 1.0;
-	marker.color.r = 1;
-	marker.color.g = 1;
-	marker.color.b = 0;
-	marker_array.markers.push_back(marker);
-
-	visualization_msgs::Marker marker2;
-	marker2.header.frame_id = "world";
-	marker2.ns = "default";
-	marker2.id = marker_id_+1;
-	marker2.type = visualization_msgs::Marker::SPHERE;
-	marker2.action = visualization_msgs::Marker::ADD;
-	marker2.pose.orientation.x = 0.0;
-	marker2.pose.orientation.y = 0.0;
-	marker2.pose.orientation.z = 0.0;
-	marker2.pose.orientation.w = 1.0;
-	marker2.scale.x = 0.02;
-	marker2.scale.y = 0.02;
-	marker2.scale.z = 0.02;
-	marker2.color.a = 1.0;
-	marker2.color.r = 1;
-	marker2.color.g = 0;
-	marker2.color.b = 0;
-	marker_array.markers.push_back(marker2);
-
-	visualization_msgs::Marker marker3;
-	marker3.header.frame_id = "world";
-	marker3.ns = "default";
-	marker3.id = marker_id_+2;
-	marker3.type = visualization_msgs::Marker::SPHERE;
-	marker3.action = visualization_msgs::Marker::ADD;
-	marker3.pose.orientation.x = 0.0;
-	marker3.pose.orientation.y = 0.0;
-	marker3.pose.orientation.z = 0.0;
-	marker3.pose.orientation.w = 1.0;
-	marker3.scale.x = 0.02;
-	marker3.scale.y = 0.02;
-	marker3.scale.z = 0.02;
-	marker3.color.a = 1.0;
-	marker3.color.r = 0;
-	marker3.color.g = 1;
-	marker3.color.b = 0;
-	marker_array.markers.push_back(marker3);
-}
-
-void Distance::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_i)
-{
-	KDL::Vector pos1 = T_B_i * xi_;
-	KDL::Vector pos2 = T_B_i * xj_;
-
-	if (marker_id_+2 >= marker_array.markers.size())
-	{
-		std::cout<<"Distance::updateMarkers ERROR!"<<std::endl;
-		*((int*)NULL) = 1;
-	}
-
-	marker_array.markers[marker_id_].header.stamp = ros::Time();
-	marker_array.markers[marker_id_].points.at(0).x = pos1.x();
-	marker_array.markers[marker_id_].points.at(0).y = pos1.y();
-	marker_array.markers[marker_id_].points.at(0).z = pos1.z();
-	marker_array.markers[marker_id_].points.at(1).x = pos2.x();
-	marker_array.markers[marker_id_].points.at(1).y = pos2.y();
-	marker_array.markers[marker_id_].points.at(1).z = pos2.z();
-
-	marker_array.markers[marker_id_+1].header.stamp = ros::Time();
-	marker_array.markers[marker_id_+1].pose.position.x = pos1.x();
-	marker_array.markers[marker_id_+1].pose.position.y = pos1.y();
-	marker_array.markers[marker_id_+1].pose.position.z = pos1.z();
-
-	marker_array.markers[marker_id_+2].header.stamp = ros::Time();
-	marker_array.markers[marker_id_+2].pose.position.x = pos2.x();
-	marker_array.markers[marker_id_+2].pose.position.y = pos2.y();
-	marker_array.markers[marker_id_+2].pose.position.z = pos2.z();
-}
 
 SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	RTT::TaskContext(name),
@@ -148,7 +47,12 @@ SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	this->addProperty("robot_semantic_description", prop_robot_semantic_description_);
 	this->addProperty("distances_count", prop_distances_count_);
 	this->addProperty("d0", prop_d0_);
-	this->ports()->addPort("dbg_joint_states", joint_in_);
+	this->addProperty("joint_position_sequence", prop_joint_position_sequence_);
+	this->addProperty("ros_joint_states_names", prop_ros_joint_states_names_);
+
+	this->ports()->addPort("JointPosition", port_joint_in_);
+	this->ports()->addPort("GripperJointPosition", port_gripper_joint_in_);
+
 	this->ports()->addPort("dbg_markers", markers_out_);
 
 	this->ports()->addPort("QhullDataIn", qhull_data_in_);
@@ -157,6 +61,54 @@ SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 
 SelfCollisionAvoidance::~SelfCollisionAvoidance() {
 }
+
+//int SelfCollisionAvoidance::JntToJac(const KDL::JntArray& q_in, KDL::Jacobian& jac, const std::string& segmentname) {
+int SelfCollisionAvoidance::JntToJac(KDL::Jacobian& jac, int link_index, const KDL::Vector &x) {
+//joint_positions_by_index_[l_i];
+	//First we check all the sizes:
+//	if (q_in.rows() != tree.getNrOfJoints() || jac.columns() != tree.getNrOfJoints())
+	if (jac.columns() != collision_model_->link_count_)
+		return -1;
+	//Lets search the tree-element
+//	SegmentMap::const_iterator it = tree.getSegments().find(segmentname);
+	//If segmentname is not inside the tree, back out:
+	//Let's make the jacobian zero:
+	jac.data.setZero();
+//	KDL::SetToZero(jac);
+//	SegmentMap::const_iterator root = tree.getRootSegment();
+//	KDL::Frame T_total = KDL::Frame::Identity();
+	KDL::Frame T_total(x);
+	int l_index = link_index;
+	//Lets recursively iterate until we are in the root segment
+	while (l_index != collision_model_->root_index_) {
+		//get the corresponding q_nr for this TreeElement:
+//		unsigned int q_nr = GetTreeElementQNr(it->second);
+		//get the pose of the segment:
+//		Frame T_local = GetTreeElementSegment(it->second).pose(q_in(q_nr));
+		KDL::Frame T_local = collision_model_->links_[l_index]->kdl_segment_->segment.pose(joint_positions_by_index_[l_index]);
+
+		//calculate new T_end:
+		T_total = T_local * T_total;
+		//get the twist of the segment:
+//		if (GetTreeElementSegment(it->second).getJoint().getType() != Joint::None) {
+//		Twist t_local = GetTreeElementSegment(it->second).twist(q_in(q_nr), 1.0);
+		KDL::Twist t_local = collision_model_->links_[l_index]->kdl_segment_->segment.twist(joint_positions_by_index_[l_index], 1.0);
+		//transform the endpoint of the local twist to the global endpoint:
+		t_local = t_local.RefPoint(T_total.p - T_local.p);
+		//transform the base of the twist to the endpoint
+		t_local = T_total.M.Inverse(t_local);
+		//store the twist in the jacobian:
+		//jac.setColumn(q_nr,t_local);
+		jac.setColumn(l_index,t_local);
+//		}//endif
+		//goto the parent
+//		it = GetTreeElementParent(it->second);
+		l_index = collision_model_->links_[l_index]->parent_index_;
+	}//endwhile
+	//Change the base of the complete jacobian from the endpoint to the base
+	changeBase(jac, T_total.M, jac);
+	return 0;
+}//end JntToJac
 
 bool SelfCollisionAvoidance::configureHook() {
 
@@ -218,6 +170,19 @@ bool SelfCollisionAvoidance::configureHook() {
 
 	transformations_by_index_.resize(collision_model_->link_count_);
 
+
+	// prepare vector of mimic joints
+	typedef std::map< std::string,boost::shared_ptr< urdf::Joint > > JointMap;
+	for (JointMap::iterator it = robot_model_.joints_.begin(); it != robot_model_.joints_.end(); it++)
+	{
+		// name: it->first
+		if (it->second->mimic.get() != NULL)
+		{
+			RTT::log(RTT::Info) << "added mimic joint: " << it->first << " = " << it->second->mimic->joint_name << " * " << it->second->mimic->multiplier << " + " << it->second->mimic->offset << std::endl;
+			mimic_joints_.push_back( std::make_pair<std::string, boost::shared_ptr< urdf::JointMimic > >(it->first, it->second->mimic) );
+		}
+	}
+
 	//
 	// create vector of proper fk calculation link sequence (sort the links graph)
 	//
@@ -235,6 +200,14 @@ bool SelfCollisionAvoidance::configureHook() {
 		{
 			RTT::log(RTT::Info) << "link: " << collision_model_->links_[l_i]->name << ", parent: NULL" << std::endl;
 			collision_model_->links_[l_i]->parent_index_ = -1;
+			if (collision_model_->root_index_ == -1)
+			{
+				collision_model_->root_index_ = l_i;
+			}
+			else
+			{
+				RTT::log(RTT::Error) << "link: " << collision_model_->links_[l_i]->name << " is has no parent - it is the second root" << std::endl;
+			}
 			fk_seq_[0] = l_i;
 		}
 	}
@@ -318,10 +291,30 @@ bool SelfCollisionAvoidance::configureHook() {
 	time_since_last_qhull_update_ = 1000;
 
 	// joint_states
-	joint_states_.name.resize(joints_count_);
-	joint_states_.position.resize(joints_count_);
-	joint_states_.velocity.resize(joints_count_);
-	joint_states_.effort.resize(joints_count_);
+//	joint_states_.name.resize(joints_count_);
+//	joint_states_.position.resize(joints_count_);
+//	joint_states_.velocity.resize(joints_count_);
+//	joint_states_.effort.resize(joints_count_);
+
+	port_joint_in_.getDataSample(jnt_pos_);
+
+	if (jnt_pos_.size() != prop_joint_position_sequence_.size())
+	{
+		RTT::log(RTT::Error) << "jnt_pos_.size() != prop_joint_position_sequence_.size(): " << jnt_pos_.size() << " != " << prop_joint_position_sequence_.size() << std::endl;
+		return false;
+	}
+
+	for (int i=0; i<prop_joint_position_sequence_.size(); i++)
+	{
+		RTT::log(RTT::Info) << "joint_position_sequence: " << i << ": <" << prop_joint_position_sequence_[i] << ">" << std::endl;
+	}
+
+	gripper_joint_states_.name.resize(joints_count_);
+	gripper_joint_states_.position.resize(joints_count_);
+	gripper_joint_states_.velocity.resize(joints_count_);
+	gripper_joint_states_.effort.resize(joints_count_);
+
+	RTT::log(RTT::Info) << "jnt_pos_.size(): " << jnt_pos_.size() << std::endl;
 
 	// visualization
 	// draw all links' collision objects
@@ -348,6 +341,16 @@ bool SelfCollisionAvoidance::configureHook() {
 
 	calculated_fk_.resize(collision_model_->link_count_);
 	
+
+	// tests
+	test_jnt_idx_ = joint_name_2_index_map_["right_arm_3_joint"];
+	std::cout << "right_arm_3_joint idx: " << test_jnt_idx_ << std::endl;
+	test_vec_.resize(200);
+	for (int i=0; i<test_vec_.size(); i++)
+	{
+		test_vec_[i].addMarkers(markers_);
+	}
+
 	return true;
 }
 
@@ -359,7 +362,7 @@ void SelfCollisionAvoidance::stopHook() {
 }
 
 void SelfCollisionAvoidance::updateHook() {
-	joint_in_.read(joint_states_);
+/*	joint_in_.read(joint_states_);
 	if (joint_states_.name.size() != joints_count_)
 	{
 //		RTT::log(RTT::Error) << "wrong number of joints: " << joint_states_.name.size() << ", should be: " << joints_count_ << std::endl;
@@ -367,14 +370,45 @@ void SelfCollisionAvoidance::updateHook() {
 		stop();
 		return;
 	}
+*/
+
+	port_joint_in_.read(jnt_pos_);
+
+	for (int i=0; i<prop_joint_position_sequence_.size(); i++)
+	{
+		joint_positions_by_index_[ joint_name_2_index_map_[prop_joint_position_sequence_[i]] ] = jnt_pos_[i];
+	}
+
+	port_gripper_joint_in_.read(gripper_joint_states_);
 
 	qhull_data_in_.read(qhull_data_);
 
 	// arrange the joint positions to their ids in the KDL tree
-	for (int i=0; i<joint_states_.name.size(); i++)
+//	for (int i=0; i<joint_states_.name.size(); i++)
+//	{
+//		joint_positions_by_index_[ joint_name_2_index_map_[joint_states_.name[i]] ] = joint_states_.position[i];
+//	}
+
+	for (int i=0; i<gripper_joint_states_.name.size(); i++)
 	{
-		joint_positions_by_index_[ joint_name_2_index_map_[joint_states_.name[i]] ] = joint_states_.position[i];
+		for (int j=0; j<prop_ros_joint_states_names_.size(); j++)
+		{
+			if (gripper_joint_states_.name[i] == prop_ros_joint_states_names_[j])
+			{
+				joint_positions_by_index_[ joint_name_2_index_map_[gripper_joint_states_.name[i]] ] = gripper_joint_states_.position[i];
+				break;
+			}
+		}
 	}
+
+	// calculate mimic joints' positions
+	for (int i=0; i<mimic_joints_.size(); i++)
+	{
+		int joint_idx = joint_name_2_index_map_[ mimic_joints_[i].first ];
+		int mimic_joint_idx = joint_name_2_index_map_[ mimic_joints_[i].second->joint_name ];
+		joint_positions_by_index_[joint_idx] = joint_positions_by_index_[mimic_joint_idx] * mimic_joints_[i].second->multiplier + mimic_joints_[i].second->offset;
+	}
+
 
 	for (int l_i=0; l_i<collision_model_->link_count_; l_i++)
 	{
@@ -504,6 +538,45 @@ void SelfCollisionAvoidance::updateHook() {
 				}
 			}
 		}
+	}
+
+	int test_vec_idx = 0;
+	// calculate jacobians
+	for (int i=0; i<distances_count; i++)
+	{
+		KDL::Jacobian ji(collision_model_->link_count_);
+		KDL::Jacobian jj(collision_model_->link_count_);
+
+		int ret = JntToJac(ji, distances[i].i_, distances[i].xi_);
+		if (ret != 0)
+		{
+			stop();
+			std::cout << "ERROR: JntToJac == " << ret <<std::endl;
+		}
+
+		KDL::Vector p1 = transformations_by_index_[distances[i].i_] * distances[i].xi_;
+		KDL::Twist t1 = ji.getColumn(test_jnt_idx_) * (-0.5);
+		test_vec_[test_vec_idx].updateMarkers(markers_, p1, p1 + t1.vel);
+		test_vec_idx++;
+
+		KDL::Vector xj = transformations_by_index_[distances[i].j_].Inverse() * transformations_by_index_[distances[i].i_] * distances[i].xj_;
+		ret = JntToJac(jj, distances[i].j_, xj);
+		if (ret != 0)
+		{
+			stop();
+			std::cout << "ERROR: JntToJac == " << ret <<std::endl;
+		}
+		KDL::Vector p2 = transformations_by_index_[distances[i].j_] * xj;
+		KDL::Twist t2 = jj.getColumn(test_jnt_idx_) * (-0.5);
+		test_vec_[test_vec_idx].updateMarkers(markers_, p2, p2 + t2.vel);
+		test_vec_idx++;
+
+//		distances[i].j_
+//		distances[i].xj_
+	}
+	for (; test_vec_idx<test_vec_.size(); test_vec_idx++)
+	{
+		test_vec_[test_vec_idx].updateMarkers(markers_, KDL::Vector(), KDL::Vector());
 	}
 
 	// visualization

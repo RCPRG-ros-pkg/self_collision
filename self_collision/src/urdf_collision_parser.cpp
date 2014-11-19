@@ -83,8 +83,8 @@ void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker.scale.z = ob->radius * 2.0;
 	marker.color.a = 0.5;
 	marker.color.r = 0.0;
-	marker.color.g = 1.0;
-	marker.color.b = 0.0;
+	marker.color.g = 0.0;
+	marker.color.b = 1.0;
 	marker_array.markers.push_back(marker);
 
 	visualization_msgs::Marker marker2;
@@ -98,8 +98,8 @@ void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker2.scale.z = ob->radius * 2.0;
 	marker2.color.a = 0.5;
 	marker2.color.r = 0.0;
-	marker2.color.g = 1.0;
-	marker2.color.b = 0.0;
+	marker2.color.g = 0.0;
+	marker2.color.b = 1.0;
 	marker_array.markers.push_back(marker2);
 
 	visualization_msgs::Marker marker3;
@@ -113,11 +113,11 @@ void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker3.scale.z = ob->lz;
 	marker3.color.a = 0.5;
 	marker3.color.r = 0.0;
-	marker3.color.g = 1.0;
-	marker3.color.b = 0.0;
+	marker3.color.g = 0.0;
+	marker3.color.b = 1.0;
 	marker_array.markers.push_back(marker3);
 
-	visualization_msgs::Marker marker4;
+/*	visualization_msgs::Marker marker4;
 	marker4.header.frame_id = "world";
 	marker4.ns = "default";
 	marker4.id = marker_id_+3;
@@ -131,6 +131,7 @@ void Capsule::addMarkers(visualization_msgs::MarkerArray &marker_array)
 	marker4.color.g = 1.0;
 	marker4.color.b = 0.0;
 	marker_array.markers.push_back(marker4);
+*/
 }
 
 void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr)
@@ -194,10 +195,11 @@ void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const
 	marker_array.markers[marker_id_+2].pose.orientation.z = qz;
 	marker_array.markers[marker_id_+2].pose.orientation.w = qw;
 
-	marker_array.markers[marker_id_+3].header.stamp = ros::Time();
+/*	marker_array.markers[marker_id_+3].header.stamp = ros::Time();
 	marker_array.markers[marker_id_+3].pose.position.x = fr.p.x();
 	marker_array.markers[marker_id_+3].pose.position.y = fr.p.y();
 	marker_array.markers[marker_id_+3].pose.position.z = fr.p.z();
+*/
 }
 
 Convex::Convex() :
@@ -713,6 +715,7 @@ void CollisionModel::parseSRDF(const std::string &xml_string)
 boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &xml_string)
 {
 	boost::shared_ptr<CollisionModel> model(new CollisionModel);
+	model->root_index_ = -1;
 	TiXmlDocument xml_doc;
 	xml_doc.Parse(xml_string.c_str());
 	if (xml_doc.Error())

@@ -42,34 +42,20 @@
 #include "rtt/TaskContext.hpp"
 #include "rtt/Port.hpp"
 
+#include <Eigen/Dense>
+
+#include <kdl/jacobian.hpp>
+
 #include "sensor_msgs/JointState.h"
 #include "visualization_msgs/MarkerArray.h"
+#include "urdf/model.h"
+
 #include "self_collision/urdf_collision_parser.h"
 
 #include "qhull_msgs/PointLists.h"
 #include "qhull_msgs/QhullList.h"
 
-class Distance
-{
-public:
-	int i_;
-	int j_;
-
-	// distance
-	double d_;
-
-	// position of point at link i in frame i
-	KDL::Vector xi_;
-
-	// position of point at link j in frame i
-	KDL::Vector xj_;
-
-	int marker_id_;
-
-	void addMarkers(visualization_msgs::MarkerArray &marker_array);
-	void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &T_B_i);
-
-};
+#include "distance.h"
 
 class SelfCollisionAvoidance: public RTT::TaskContext {
 public:
@@ -81,11 +67,15 @@ public:
 	virtual void updateHook();
 
 private:
+	int JntToJac(KDL::Jacobian& jac, int link_index, const KDL::Vector &x);
 	bool isQhullUpdateNeeded();
 
 	// ports and buffers
-	RTT::InputPort<sensor_msgs::JointState> joint_in_;
-	sensor_msgs::JointState joint_states_;
+	RTT::InputPort<Eigen::VectorXd > port_joint_in_;
+	Eigen::VectorXd jnt_pos_;
+
+	RTT::InputPort<sensor_msgs::JointState> port_gripper_joint_in_;
+	sensor_msgs::JointState gripper_joint_states_;
 
 	RTT::OutputPort<visualization_msgs::MarkerArray> markers_out_;
 	visualization_msgs::MarkerArray markers_;
@@ -109,12 +99,20 @@ private:
 	self_collision::Link::VecPtrCollision convex_hull_vector_;
 	std::vector<bool> calculated_fk_;
 	int time_since_last_qhull_update_;
+	std::vector<std::pair<std::string, boost::shared_ptr< urdf::JointMimic > > > mimic_joints_;
 
 	// properties
 	std::string prop_robot_description_;
 	std::string prop_robot_semantic_description_;
 	int prop_distances_count_;
 	double prop_d0_;
+        std::vector<std::string> prop_joint_position_sequence_;
+        std::vector<std::string> prop_ros_joint_states_names_;
+
+	// for test
+	int test_jnt_idx_;
+	std::vector<VectorVis> test_vec_;
 };
 
 #endif	// SELF_COLLISION_AVOIDANCE_H_
+

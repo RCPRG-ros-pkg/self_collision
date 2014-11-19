@@ -36,12 +36,14 @@
 
 #include "ros/ros.h"
 #include "std_msgs/String.h"
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_kdl/tf2_kdl/tf2_kdl.h>
+//#include <tf2_ros/buffer.h>
+//#include <tf2_ros/transform_listener.h>
+//#include <tf2_kdl/tf2_kdl/tf2_kdl.h>
 #include <sstream>
 #include "qhull_msgs/QhullList.h"
 #include "qhull_msgs/PointLists.h"
+
+//#include <tf/transform_broadcaster.h>
 
 extern "C" {
 #include <libqhull/qset.h>
@@ -273,9 +275,19 @@ int main(int argc, char **argv)
 
 	ros::Subscriber sub = n.subscribe("/qhull_points", 10, qhullCallback);
 
+//	tf::TransformBroadcaster br;
+//	double alpha = 0.0;
 	ros::Rate loop_rate(100);
 	while (ros::ok())
 	{
+//		tf::Transform transform;
+//		transform.setOrigin( tf::Vector3(0, 0, 0) );
+//		tf::Quaternion q;
+//		q.setRPY(0, 0, alpha);
+//		transform.setRotation(q);
+//		br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world2", "world"));
+
+//		alpha += 0.1 * 10.0/180.0*3.1415;
 		ros::spinOnce();
 		loop_rate.sleep();
 	}

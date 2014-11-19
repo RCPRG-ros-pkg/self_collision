@@ -7,8 +7,8 @@ project(qhull_calculator)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
-  tf2_kdl
   qhull_msgs
+#  tf
 )
 
 ## System dependencies are found with CMake's conventions

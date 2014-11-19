@@ -141,6 +141,7 @@ public:
 
 	boost::shared_ptr<Link> *links_;
 	int link_count_;
+	int root_index_;
 
 private:
 	CollisionModel();
