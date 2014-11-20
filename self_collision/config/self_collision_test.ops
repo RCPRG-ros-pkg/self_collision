@@ -58,6 +58,8 @@ stream("SCA.dbg_markers", ros.comm.topic("/velma_markers"));
 stream("SCA.QhullDataIn", ros.comm.topic("/qhull"));
 stream("SCA.QhullPointsOut", ros.comm.topic("/qhull_points"));
 
+connect("Mass.MassMatrix", "SCA.MassMatrix", ConnPolicy());
+
 Ps.configure();
 Jc.configure();
 SCA.configure();

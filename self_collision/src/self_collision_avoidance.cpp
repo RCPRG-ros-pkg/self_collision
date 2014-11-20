@@ -54,6 +54,7 @@ SelfCollisionAvoidance::SelfCollisionAvoidance(const std::string& name) :
 	this->ports()->addPort("JointPositionIn", port_joint_in_);
 	this->ports()->addPort("CtrlJointPositionIn", port_ctrl_joint_in_);
 	this->ports()->addPort("GripperJointPosition", port_gripper_joint_in_);
+	this->ports()->addPort("MassMatrix", port_mass_matrix_);
 
 	this->ports()->addPort("dbg_markers", markers_out_);
 
@@ -292,12 +293,6 @@ bool SelfCollisionAvoidance::configureHook() {
 	qhull_points_out_.setDataSample(qhull_points_);
 	time_since_last_qhull_update_ = 1000;
 
-	// joint_states
-//	joint_states_.name.resize(joints_count_);
-//	joint_states_.position.resize(joints_count_);
-//	joint_states_.velocity.resize(joints_count_);
-//	joint_states_.effort.resize(joints_count_);
-
 	port_joint_in_.getDataSample(jnt_pos_);
 	RTT::log(RTT::Info) << "jnt_pos_.size(): " << jnt_pos_.size() << std::endl;
 	if (jnt_pos_.size() != prop_joint_position_sequence_.size())
@@ -357,6 +352,33 @@ bool SelfCollisionAvoidance::configureHook() {
 	Fmax_ = 10.0;
 	Frep_mult_ = Fmax_ / (prop_d0_ * prop_d0_);
 
+	// mass matrix
+	port_mass_matrix_.getDataSample(mass_matrix_);
+	if (mass_matrix_.rows() != ctrl_jnt_pos_.size())
+	{
+		RTT::log(RTT::Error) << "mass_matrix_.rows() != ctrl_jnt_pos_.size(): " << mass_matrix_.rows() << " != " << ctrl_jnt_pos_.size() << RTT::endlog();
+		return false;
+	}
+	if (mass_matrix_.cols() != ctrl_jnt_pos_.size())
+	{
+		RTT::log(RTT::Error) << "mass_matrix_.cols() != ctrl_jnt_pos_.size(): " << mass_matrix_.cols() << " != " << ctrl_jnt_pos_.size() << RTT::endlog();
+		return false;
+	}
+
+	lu_ = Eigen::PartialPivLU<Eigen::MatrixXd>(ctrl_jnt_pos_.size());
+
+	Jxi_.resize(3, ctrl_jnt_pos_.size());	// 3 rows	ctrl_jnt_pos_.size() columns
+	Jdi_.resize(1, 3);			// 1 row	3 columns
+	Ji_.resize(1, ctrl_jnt_pos_.size());
+	JiT_.resize(ctrl_jnt_pos_.size(),1);
+	tmp1n_.resize(1, ctrl_jnt_pos_.size());
+	mass_matrix_inv_.resize(ctrl_jnt_pos_.size(), ctrl_jnt_pos_.size());	// ctrl_jnt_pos_.size() rows	ctrl_jnt_pos_.size() columns
+	Mdi_inv_.resize(1,1);
+	Mdi_.resize(1,1);
+	Kdij_.resize(2,2);
+
+	es_ = Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd>(2);
+
 	// tests
 	test_jnt_idx_ = joint_name_2_index_map_["right_arm_3_joint"];
 	std::cout << "right_arm_3_joint idx: " << test_jnt_idx_ << std::endl;
@@ -377,6 +399,8 @@ void SelfCollisionAvoidance::stopHook() {
 }
 
 void SelfCollisionAvoidance::updateHook() {
+	port_mass_matrix_.read(mass_matrix_);
+
 	port_joint_in_.read(jnt_pos_);
 	for (int i=0; i<prop_joint_position_sequence_.size(); i++)
 	{
@@ -548,14 +572,18 @@ void SelfCollisionAvoidance::updateHook() {
 		}
 	}
 
+	// invert the mass matrix
+	lu_.compute(mass_matrix_);
+	mass_matrix_inv_ = lu_.inverse();
+
 	int test_vec_idx = 0;
 	// calculate jacobians
 	for (int i=0; i<distances_count; i++)
 	{
-		KDL::Jacobian ji(collision_model_->link_count_);
-		KDL::Jacobian jj(collision_model_->link_count_);
+		KDL::Jacobian Jxi(collision_model_->link_count_);
+		KDL::Jacobian Jxj(collision_model_->link_count_);
 
-		int ret = JntToJac(ji, distances[i].i_, distances[i].xi_Ti_);
+		int ret = JntToJac(Jxi, distances[i].i_, distances[i].xi_Ti_);
 		if (ret != 0)
 		{
 			RTT::log(RTT::Error) << "Jacobian calculation error" << RTT::endlog();
@@ -564,7 +592,7 @@ void SelfCollisionAvoidance::updateHook() {
 		}
 
 //		KDL::Vector xj = transformations_by_index_[distances[i].j_].Inverse() * transformations_by_index_[distances[i].i_] * distances[i].xj_;
-		ret = JntToJac(jj, distances[i].j_, distances[i].xj_Tj_);
+		ret = JntToJac(Jxj, distances[i].j_, distances[i].xj_Tj_);
 		if (ret != 0)
 		{
 			RTT::log(RTT::Error) << "Jacobian calculation error" << RTT::endlog();
@@ -572,17 +600,17 @@ void SelfCollisionAvoidance::updateHook() {
 			return;
 		}
 
-		// test: visualization
 		KDL::Vector p1 = transformations_by_index_[distances[i].i_] * distances[i].xi_Ti_;
-		KDL::Twist t1 = ji.getColumn(test_jnt_idx_) * (-0.5);
+		KDL::Vector p2 = transformations_by_index_[distances[i].j_] * distances[i].xj_Tj_;
+		// test: visualization
+/*		KDL::Twist t1 = Jxi.getColumn(test_jnt_idx_) * (-0.5);
 		test_vec_[test_vec_idx].updateMarkers(markers_, p1, p1 + t1.vel);
 		test_vec_idx++;
 
-		KDL::Vector p2 = transformations_by_index_[distances[i].j_] * distances[i].xj_Tj_;
-		KDL::Twist t2 = jj.getColumn(test_jnt_idx_) * (-0.5);
+		KDL::Twist t2 = Jxj.getColumn(test_jnt_idx_) * (-0.5);
 		test_vec_[test_vec_idx].updateMarkers(markers_, p2, p2 + t2.vel);
 		test_vec_idx++;
-
+*/
 		// check if the distance returned from distance algorithm is equal to |p1-p2|
 		double d_ij = (p1-p2).Norm();
 		if (d_ij-distances[i].d_ > 0.0001 || d_ij-distances[i].d_ < -0.0001)
@@ -599,7 +627,70 @@ void SelfCollisionAvoidance::updateHook() {
 			return;
 		}
 
+		// eq. 8
 		double Frep_ij = Frep_mult_ * (distances[i].d_ - prop_d0_) * (distances[i].d_ - prop_d0_);
+
+		// TODO: calculate jacobian for point
+		KDL::Vector xj_Ti = transformations_by_index_[distances[i].i_].Inverse() * transformations_by_index_[distances[i].j_] * distances[i].xj_Tj_;
+
+		// eq. 4
+		KDL::Vector e_i = xj_Ti - distances[i].xi_Ti_;
+		e_i.Normalize();
+
+		// eq. 15
+		Jdi_(0,0) = e_i.x();
+		Jdi_(0,1) = e_i.y();
+		Jdi_(0,2) = e_i.z();
+
+		// rewrite the linear part of the jacobian
+		for (int j=0; j<prop_ctrl_joint_position_sequence_.size(); j++)
+		{
+			KDL::Vector v = Jxi.getColumn( joint_name_2_index_map_[prop_ctrl_joint_position_sequence_[i]] ).vel;
+			Jxi_(0, j) = v.x();
+			Jxi_(1, j) = v.y();
+			Jxi_(2, j) = v.z();
+		}
+
+		// eq. 16
+		Ji_.noalias() = Jdi_ * Jxi_;			// (1 x |ctrl_jnt_pos_|) = (1 x 3) * (3 x |ctrl_jnt_pos_|)
+		JiT_ = Ji_.transpose();
+
+		// eq. 18
+		tmp1n_.noalias() = Ji_ * mass_matrix_inv_;	// (1 x |ctrl_jnt_pos_|) = (1 x |ctrl_jnt_pos_|) * (|ctrl_jnt_pos_| x |ctrl_jnt_pos_|)
+		Mdi_inv_.noalias() = tmp1n_ * JiT_;			// (1 x 1) = (1 x |ctrl_jnt_pos_|) * (|ctrl_jnt_pos_| x 1)
+		Mdi_(0,0) = 1.0 / Mdi_inv_(0,0);
+
+		// eq. 21
+		double d2Vrep = -2.0 * Frep_mult_ * (distances[i].d_ - prop_d0_);
+		Kdij_(0,0) = d2Vrep;
+		Kdij_(1,1) = d2Vrep;
+		Kdij_(0,1) = -d2Vrep;
+		Kdij_(1,0) = -d2Vrep;
+
+
+// double diagonalization method
+//    tmpNK_.noalias() = J * Mi;
+//    A.noalias() = tmpNK_ * JT;
+//    luKK_.compute(A);
+//    A = luKK_.inverse();
+
+//    tmpKK_ = Kc.asDiagonal();
+//    UNRESTRICT_ALLOC;
+//    es_.compute(tmpKK_, A);
+//    RESTRICT_ALLOC;
+//    K0 = es_.eigenvalues();
+//    luKK_.compute(es_.eigenvectors());
+//    Q = luKK_.inverse();
+
+//    tmpKK_ = Dxi.asDiagonal();
+//    Dc.noalias() = Q.transpose() * tmpKK_;
+//    tmpKK_ = K0.cwiseSqrt().asDiagonal();
+//    tmpKK2_.noalias() = Dc *  tmpKK_;
+//    Dc.noalias() = tmpKK2_ * Q;
+//    tmpK_.noalias() = J * joint_velocity_;
+//    F.noalias() = Dc * tmpK_;
+//    joint_torque_command_.noalias() -= JT * F;
+
 
 	}
 	for (; test_vec_idx<test_vec_.size(); test_vec_idx++)

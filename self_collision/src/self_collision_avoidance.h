@@ -66,6 +66,8 @@ public:
 	virtual void stopHook();
 	virtual void updateHook();
 
+	typedef Eigen::MatrixXd Jacobian;
+
 private:
 	int JntToJac(KDL::Jacobian& jac, int link_index, const KDL::Vector &x);
 	bool isQhullUpdateNeeded();
@@ -90,6 +92,9 @@ private:
 	RTT::InputPort<qhull_msgs::QhullList> qhull_data_in_;
 	qhull_msgs::QhullList qhull_data_;
 
+	RTT::InputPort<Eigen::MatrixXd> port_mass_matrix_;
+	Eigen::MatrixXd mass_matrix_;
+
 	// variables
 	int joints_count_;
 	KDL::Tree robot_tree_;
@@ -103,6 +108,15 @@ private:
 	std::vector<bool> calculated_fk_;
 	int time_since_last_qhull_update_;
 	std::vector<std::pair<std::string, boost::shared_ptr< urdf::JointMimic > > > mimic_joints_;
+
+	Eigen::MatrixXd mass_matrix_inv_;
+	Eigen::PartialPivLU<Eigen::MatrixXd> lu_;
+	Eigen::MatrixXd tmp1n_;
+	Jacobian Jxi_, Jdi_, Ji_, JiT_;
+	Eigen::MatrixXd Mdi_;
+	Eigen::MatrixXd Mdi_inv_;
+	Eigen::MatrixXd Kdij_;
+	Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> es_;
 
 	double Fmax_;
 	double Frep_mult_;
