@@ -376,6 +376,11 @@ void Link::clear()
 	// TODO
 }
 
+void Joint::clear()
+{
+    // TODO
+}
+
 boost::shared_ptr< const Link > CollisionModel::getLink(int id)
 {
 	if (id < 0 || id >= link_count_)
@@ -687,6 +692,57 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 	}
 }
 
+bool CollisionModel::parseLimit(Joint &joint, TiXmlElement* o)
+{
+// e.g. <limit effort="100" lower="-2.792444444" upper="2.792444444" velocity="100"/>
+
+	const char *lower_char = o->Attribute("lower");
+	const char *upper_char = o->Attribute("upper");
+	if (!lower_char)
+	{
+		ROS_ERROR("No lower limit given for the joint.");
+		return false;
+	}
+	if (!upper_char)
+	{
+		ROS_ERROR("No lower limit given for the joint.");
+		return false;
+	}
+
+    try
+    {
+        joint.lower_limit_ = boost::lexical_cast<double>(lower_char);
+        joint.upper_limit_ = boost::lexical_cast<double>(upper_char);
+    }
+    catch (boost::bad_lexical_cast &e)
+    {
+        ROS_ERROR("Joint limit (%s, %s) is not a valid float", lower_char, upper_char);
+        return false;
+    }
+
+    return true;
+}
+
+bool CollisionModel::parseJoint(Joint &joint, TiXmlElement* o)
+{
+	joint.clear();
+	const char *name_char = o->Attribute("name");
+	if (!name_char)
+	{
+		ROS_ERROR("No name given for the joint.");
+		return false;
+	}
+	joint.name_ = std::string(name_char);
+
+    // joint limit is optional
+	TiXmlElement *lim = o->FirstChildElement("limit");
+	if (lim) {
+		if (!parseLimit(joint, lim))
+			return false;
+	}
+    return true;
+}
+
 bool CollisionModel::parseDisableCollision(std::string &link1, std::string &link2, TiXmlElement *c)
 {
 	const char* link1_str = c->Attribute("link1");
@@ -850,6 +906,21 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 					conv->points_id_.push_back( std::make_pair<int, KDL::Vector>(id, p_it->second) );
 				}
 			}
+		}
+	}
+
+	// Get all Joint elements
+	for (TiXmlElement* joint_xml = robot_xml->FirstChildElement("joint"); joint_xml; joint_xml = joint_xml->NextSiblingElement("joint"))
+	{
+		try {
+            Joint joint;
+			parseJoint(joint, joint_xml);
+            model->joints_.push_back(joint);
+		}
+		catch (urdf::ParseError &e) {
+			ROS_ERROR("link xml is not initialized correctly");
+			model.reset();
+			return model;
 		}
 	}
 

@@ -133,6 +133,15 @@ public:
 private:
 };
 
+class Joint
+{
+public:
+	void clear();
+
+    std::string name_;
+    double lower_limit_, upper_limit_;
+};
+
 class CollisionModel
 {
 public:
@@ -154,6 +163,8 @@ public:
 	int link_count_;
 	int root_index_;
 
+    std::vector<Joint> joints_;
+
 private:
 	CollisionModel();
 
@@ -167,6 +178,9 @@ private:
 	static boost::shared_ptr<Geometry> parseGeometry(TiXmlElement *g);
 	static bool parseCollision(Collision &col, TiXmlElement* config);
 	static bool parseLink(Link &link, TiXmlElement* config);
+    static bool parseLimit(Joint &joint, TiXmlElement* o);
+    static bool parseJoint(Joint &joint, TiXmlElement* o);
+
 
 	static fcl_2::GJKSolver_indep gjk_solver;
 };
