@@ -432,7 +432,6 @@ KDL::Vector initVectorFromString(const std::string &vector_str)
 };
 
 CollisionModel::CollisionModel() :
-	links_(NULL),
 	link_count_(0)
 {
 }
@@ -676,9 +675,8 @@ bool CollisionModel::parseLink(Link &link, TiXmlElement* config)
 	// Multiple Collisions (optional)
 	for (TiXmlElement* col_xml = config->FirstChildElement("self_collision_checking"); col_xml; col_xml = col_xml->NextSiblingElement("self_collision_checking"))
 	{
-		boost::shared_ptr<Collision> col;
-		col.reset(new Collision());
-		col->parent_.reset(&link);
+		boost::shared_ptr<Collision> col(new Collision());
+        col->parent_link_idx_ = link.index_;
 		if (parseCollision(*col, col_xml))
 		{
 			link.collision_array.push_back(col);
@@ -849,36 +847,15 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 		return model;
 	}
 	model->name_ = std::string(name);
-
-	int link_count = 0;
-	// count links
-	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"))
-	{
-		link_count++;
-	}
-
-	if (link_count == 0){
-		ROS_ERROR("No link elements found in urdf file");
-		model.reset();
-		return model;
-	}
-
-	if (model->links_ != NULL)
-	{
-		delete[] model->links_;
-		model->links_ = NULL;
-	}
-	model->links_ = new boost::shared_ptr<Link>[link_count];
-	model->link_count_ = link_count;
-
 	int link_index=0;
 	// Get all Link elements
 	for (TiXmlElement* link_xml = robot_xml->FirstChildElement("link"); link_xml; link_xml = link_xml->NextSiblingElement("link"), link_index++)
 	{
-		model->links_[link_index].reset(new Link);
-		model->links_[link_index]->index_ = link_index;
+        boost::shared_ptr<Link> plink(new Link());
+        model->links_.push_back(  plink );
+		plink->index_ = link_index;
 		try {
-			parseLink(*(model->links_[link_index]), link_xml);
+			parseLink(*plink, link_xml);
 		}
 		catch (urdf::ParseError &e) {
 			ROS_ERROR("link xml is not initialized correctly");
@@ -886,6 +863,8 @@ boost::shared_ptr<CollisionModel> CollisionModel::parseURDF(const std::string &x
 			return model;
 		}
 	}
+
+    model->link_count_ = model->links_.size();
 
 	for (int l_i = 0; l_i < model->link_count_; l_i++)
 	{

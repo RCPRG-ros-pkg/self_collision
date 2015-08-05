@@ -116,7 +116,7 @@ public:
 	void clear();
 	boost::shared_ptr< Geometry > geometry;
 	KDL::Frame origin;
-	boost::shared_ptr<Link> parent_;
+    int parent_link_idx_;
 private:
 };
 
@@ -159,7 +159,8 @@ public:
 	void generateCollisionPairs();
 	static double getDistance(const Geometry &geom1, const KDL::Frame &tf1, const Geometry &geom2, const KDL::Frame &tf2, KDL::Vector &d1_out, KDL::Vector &d2_out, double d0);
 
-	boost::shared_ptr<Link> *links_;
+    typedef std::vector< boost::shared_ptr< Link > > VecPtrLink;
+    VecPtrLink links_;
 	int link_count_;
 	int root_index_;
 

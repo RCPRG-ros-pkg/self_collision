@@ -484,7 +484,7 @@ void SelfCollisionAvoidance::updateHook() {
 	for (self_collision::Link::VecPtrCollision::iterator it = convex_hull_vector_.begin(); it != convex_hull_vector_.end(); it++, convex_idx++)
 	{
 			self_collision::Convex* convex = static_cast<self_collision::Convex*>((*it)->geometry.get());
-			KDL::Frame &T_B_L = transformations_by_index_[(*it)->parent_->index_];
+			KDL::Frame &T_B_L = transformations_by_index_[(*it)->parent_link_idx_];
 
 			qhull_points_.point_lists[convex_idx].num_points = 0;
 			for (self_collision::Convex::ConvexPointsIdVector::iterator pt_it = convex->points_id_.begin(); pt_it != convex->points_id_.end(); pt_it++)
