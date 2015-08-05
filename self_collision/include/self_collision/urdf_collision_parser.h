@@ -55,7 +55,7 @@ namespace self_collision
 class Geometry
 {
 public:
-	enum {UNDEFINED, CAPSULE, CONVEX};
+	enum {UNDEFINED, CAPSULE, CONVEX, SPHERE};
 	int type;
 	boost::shared_ptr<fcl_2::ShapeBase> shape;
 	Geometry(int type);
@@ -72,6 +72,17 @@ public:
 	Capsule();
 	double radius;
 	double length;
+	virtual void clear();
+	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array);
+	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr);
+private:
+};
+
+class Sphere : public Geometry
+{
+public:
+	Sphere();
+	double radius;
 	virtual void clear();
 	virtual void addMarkers(visualization_msgs::MarkerArray &marker_array);
 	virtual void updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr);
@@ -149,6 +160,7 @@ private:
 	bool parseDisableCollision(std::string &link1, std::string &link2, TiXmlElement *c);
 
 	static bool parsePose(KDL::Frame &pose, TiXmlElement* xml);
+	static bool parseSphere(Sphere &s, TiXmlElement *c);
 	static bool parseCapsule(Capsule &s, TiXmlElement *c);
 	static bool parsePoint(std::string &frame, KDL::Vector &p, TiXmlElement *c);
 	static bool parseConvex(Convex &s, TiXmlElement *c);

@@ -202,6 +202,24 @@ void Capsule::updateMarkers(visualization_msgs::MarkerArray &marker_array, const
 */
 }
 
+Sphere::Sphere() :
+	Geometry(SPHERE)
+{
+}
+
+void Sphere::clear()
+{
+	radius = 0.0;
+}
+
+void Sphere::addMarkers(visualization_msgs::MarkerArray &marker_array)
+{
+}
+
+void Sphere::updateMarkers(visualization_msgs::MarkerArray &marker_array, const KDL::Frame &fr)
+{
+}
+
 Convex::Convex() :
 	Geometry(CONVEX)
 {
@@ -492,6 +510,30 @@ bool CollisionModel::parseCapsule(Capsule &s, TiXmlElement *c)
 	return true;
 }
 
+bool CollisionModel::parseSphere(Sphere &s, TiXmlElement *c)
+{
+	s.clear();
+	s.type = Geometry::SPHERE;
+	if (!c->Attribute("radius"))
+	{
+		ROS_ERROR("Capsule shape must have a radius attribute");
+		return false;
+	}
+	try
+	{
+		s.radius = boost::lexical_cast<double>(c->Attribute("radius"));
+	}
+	catch (boost::bad_lexical_cast &e)
+	{
+		std::stringstream stm;
+		stm << "radius [" << c->Attribute("radius") << "] is not a valid float: " << e.what();
+		ROS_ERROR("%s", stm.str().c_str());
+		return false;
+	}
+
+	return true;
+}
+
 bool CollisionModel::parsePoint(std::string &frame, KDL::Vector &p, TiXmlElement *c)
 {
 	if (c)
@@ -571,6 +613,16 @@ boost::shared_ptr<Geometry> CollisionModel::parseGeometry(TiXmlElement *g)
 			return geom;
 		}
 	}
+	else if (type_name == "sphere")
+    {
+		Sphere *s = new Sphere();
+		geom.reset(s);
+		if (parseSphere(*s, shape_xml))
+		{
+//			s->shape.reset( static_cast<fcl_2::ShapeBase*>(new fcl_2::Capsule(s->radius, s->length)) );
+			return geom;
+		}
+    }
 	else if (type_name == "convex")
 	{
 		Convex *s = new Convex();
