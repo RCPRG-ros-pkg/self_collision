@@ -123,6 +123,7 @@ private:
 class Link
 {
 public:
+    Link();
 	void clear();
 	std::string name;
 	int index_;
@@ -148,6 +149,7 @@ public:
 	static boost::shared_ptr<CollisionModel> parseURDF(const std::string &xml_string);
 	void parseSRDF(const std::string &xml_string);
 
+    bool addLink(const std::string &name, const std::string &parent_name, const std::vector< boost::shared_ptr< Collision > > &col_array);
 	std::string name_;
 
 	typedef std::vector<std::pair<int, int> > CollisionPairs;

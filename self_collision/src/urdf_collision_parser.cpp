@@ -371,6 +371,11 @@ void Collision::clear()
 	// TODO
 }
 
+Link::Link() :
+    kdl_segment_(NULL)
+{
+}
+
 void Link::clear()
 {
 	// TODO
@@ -1095,6 +1100,31 @@ double CollisionModel::getDistance(const Geometry &geom1, const KDL::Frame &tf1,
 	{
 		ROS_ERROR("not supported distance measure");
 	}
+}
+
+bool CollisionModel::addLink(const std::string &name, const std::string &parent_name, const std::vector< boost::shared_ptr< Collision > > &col_array) {
+    if (name.empty()) {
+        return false;
+    }
+
+    for (VecPtrLink::const_iterator it = links_.begin(); it != links_.end(); it++) {
+        if ((*it)->name == name) {
+            return false;
+        }
+    }
+
+    boost::shared_ptr< Link > plink(new Link());
+    plink->name = name;
+    plink->collision_array = col_array;
+    plink->index_ = links_.size();
+    plink->parent_index_ = getLinkIndex(parent_name);
+    for (Link::VecPtrCollision::iterator it = plink->collision_array.begin(); it != plink->collision_array.end(); it++) {
+        (*it)->parent_link_idx_ = plink->index_;
+    }
+    links_.push_back(plink);
+    link_count_ = links_.size();
+
+    return true;
 }
 
 }	// namespace self_collision
